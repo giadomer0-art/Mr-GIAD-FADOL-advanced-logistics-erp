@@ -2,112 +2,149 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# --- 1. إعدادات الصفحة والواجهة ---
+# --- 1. إعدادات الصفحة ---
 st.set_page_config(
-    page_title="لوحة تشغيل الحلول المتقدمة", 
-    page_icon="🚚", 
+    page_title="شركة الحلول المتقدمة | نظام التشغيل", 
+    page_icon="⚡", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. إدخال تنسيقات CSS احترافية (Custom CSS) ---
+# --- 2. التصميم الاحترافي الفاخر (UI Customization) ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
     
-    /* تطبيق خط القاهرة والاتجاه */
-    html, body, [class*="css"], div, span, p {
+    /* ضبط الخط والاتجاهات */
+    html, body, [class*="css"], div, span, p, label {
         font-family: 'Cairo', sans-serif !important;
         direction: rtl;
         text-align: right;
     }
     
-    /* خلفية الصفحة العامة */
+    /* خلفية التطبيق العامة + شعار الشركة خلفية مائية شفاف */
     .stApp {
-        background-color: #f4f6f9;
+        background-color: #F8FAFC;
+        background-image: linear-gradient(rgba(248, 250, 252, 0.93), rgba(248, 250, 252, 0.93)), 
+                          url('https://raw.githubusercontent.com/giadomer0-art/Mr-GIAD-FADOL-advanced-logistics-erp/main/1.jpeg');
+        background-repeat: no-repeat;
+        background-position: center center;
+        background-attachment: fixed;
+        background-size: 550px;
     }
-    
-    /* الهيدر الرئيسي */
+
+    /* الهيدر الرئيسي الفاخر باستلهام ألوان الشعار */
     .main-header {
-        background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
-        padding: 25px;
-        border-radius: 16px;
+        background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+        padding: 30px;
+        border-radius: 20px;
         color: white;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        margin-bottom: 25px;
+        box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 30px;
+        position: relative;
+        overflow: hidden;
     }
-    .main-header h1 { color: #FFFFFF !important; font-weight: 800; font-size: 2.2rem; margin: 0; }
-    .main-header p { color: #E0E7FF !important; font-size: 1.1rem; margin-top: 5px; }
+    .main-header::before {
+        content: "";
+        position: absolute;
+        top: 0; right: 0; width: 8px; height: 100%;
+        background: linear-gradient(180deg, #38BDF8 0%, #EF4444 100%);
+    }
+    .main-header h1 { 
+        color: #FFFFFF !important; 
+        font-weight: 900; 
+        font-size: 2.4rem; 
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+    .main-header p { 
+        color: #94A3B8 !important; 
+        font-size: 1.15rem; 
+        margin-top: 8px; 
+        font-weight: 600;
+    }
 
-    /* بطاقات المؤشرات الماليّة (Custom Metrics) */
+    /* بطاقات المؤشرات المالية المتطورة */
     .metric-card {
-        background-color: #FFFFFF;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        border-right: 6px solid #3B82F6;
-        transition: transform 0.2s ease-in-out;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+        border: 1px solid #E2E8F0;
+        transition: all 0.3s ease;
+        position: relative;
     }
-    .metric-card:hover { transform: translateY(-3px); }
-    .metric-title { color: #6B7280; font-size: 0.95rem; font-weight: 600; }
-    .metric-value { color: #1F2937; font-size: 1.8rem; font-weight: 800; margin-top: 5px; }
+    .metric-card:hover { 
+        transform: translateY(-5px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    }
+    .metric-title { color: #64748B; font-size: 1rem; font-weight: 700; }
+    .metric-value { color: #0F172A; font-size: 2.1rem; font-weight: 900; margin-top: 8px; }
     
-    /* الألوان للبطاقات المتنوعة */
-    .card-blue { border-right-color: #2563EB; }
-    .card-green { border-right-color: #059669; }
-    .card-red { border-right-color: #DC2626; }
-    .card-purple { border-right-color: #7C3AED; }
+    /* شريط الألوان العلوي للبطاقات */
+    .card-revenue { border-top: 4px solid #38BDF8; }
+    .card-cost { border-top: 4px solid #EF4444; }
+    .card-profit { border-top: 4px solid #10B981; }
+    .card-orders { border-top: 4px solid #1E293B; }
 
-    /* تحسين شكل صناديق رفع الملفات */
-    .stFileUploader {
-        background-color: #FFFFFF;
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px dashed #CBD5E1;
+    /* تحسين صناديق رفع الملفات */
+    [data-testid="stFileUploader"] {
+        background: rgba(255, 255, 255, 0.85);
+        border-radius: 16px;
+        padding: 10px;
+        border: 2px dashed #CBD5E1;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
     }
     
-    /* أزرار التحميل والتفاعل */
-    .stButton>button, .stDownloadButton>button {
+    /* زر التحميل الفاخر */
+    .stDownloadButton>button {
         width: 100%;
-        background: linear-gradient(135deg, #059669 0%, #10B981 100%) !important;
+        background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
         color: white !important;
-        font-weight: 700 !important;
-        font-size: 1.1rem !important;
-        border-radius: 10px !important;
+        font-weight: 800 !important;
+        font-size: 1.2rem !important;
+        border-radius: 14px !important;
         border: none !important;
-        padding: 12px 20px !important;
-        box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3) !important;
+        padding: 16px 24px !important;
+        box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3) !important;
+        transition: all 0.3s ease !important;
     }
-    
-    /* القائمة الجانبية (Sidebar) */
+    .stDownloadButton>button:hover {
+        transform: scale(1.01);
+        box-shadow: 0 20px 25px -5px rgba(16, 185, 129, 0.4) !important;
+    }
+
+    /* القائمة الجانبية Sidebar */
     [data-testid="stSidebar"] {
-        background-color: #FFFFFF;
+        background-color: rgba(255, 255, 255, 0.95);
         border-left: 1px solid #E2E8F0;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. الهيدر الرئيسي ---
+# --- 3. الهيدر الرئيسي مدمج بالشعار ---
 st.markdown("""
     <div class="main-header">
-        <h1>🚚 لوحة إدارة الرواتب وأرباح التشغيل</h1>
+        <h1>📊 المنظومة المالية والتشغيلية الشاملة</h1>
         <p>شركة الحلول المتقدمة للخدمات اللوجستية | Advanced Logistics Solutions</p>
     </div>
 """, unsafe_allow_html=True)
 
-# --- 4. القائمة الجانبية لإعداد المشروع ---
+# --- 4. القائمة الجانبية ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1554/1554284.png", width=80)
-    st.title("⚙️ خيارات العميل")
+    st.image("https://raw.githubusercontent.com/giadomer0-art/Mr-GIAD-FADOL-advanced-logistics-erp/main/1.jpeg", width=160)
+    st.markdown("## ⚙️ إدارة المشاريع")
     selected_client = st.radio(
         "اختر العميل المراد حسابه:", 
         ["Supermall", "Ninja (نينجا)", "Kita (كيتا)", "HungerStation (هنقرستيشن)"],
         index=0
     )
     st.divider()
-    st.caption("برنامج معالجة البيانات التلقائي v2.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v3.0")
 
-# ----------------- 5. دوال إيرادات الشركة -----------------
+# ----------------- 5. دوال الإيرادات -----------------
 def calc_supermall_revenue(orders):
     if orders <= 400: return orders * 9
     elif orders <= 500: return orders * 10
@@ -160,8 +197,8 @@ def calc_car_rent(owns_car, model_year):
         return 1200 if pd.notna(model_year) and int(model_year) >= 2015 else 1000
     return 0
 
-# ----------------- 7. منطقة رفع الملفات المنسقة -----------------
-st.subheader(f"📂 رفع ملفات مشروع: {selected_client}")
+# ----------------- 7. منطقة رفع الملفات -----------------
+st.markdown(f"### 📂 مركز رفع بيانات مشروع: `{selected_client}`")
 
 col1, col2, col3 = st.columns(3)
 with col1: 
@@ -174,7 +211,7 @@ with col3:
     st.markdown("**3. السيارات والبنزين**")
     car_fuel_file = st.file_uploader("اختر ملف السيارات", type=['xlsx'], key="u3")
 
-# ----------------- 8. معالجة البيانات وتصميم اللوحة -----------------
+# ----------------- 8. المعالجة وعرض النتائج -----------------
 if perf_file and agent_info_file and car_fuel_file:
     try:
         df_perf = pd.read_excel(perf_file)
@@ -227,9 +264,9 @@ if perf_file and agent_info_file and car_fuel_file:
         df_merged[['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
 
-        # --- 9. عرض بطاقات الأداء المنسقة (Custom Cards) ---
+        # --- 9. بطاقات الأداء المنسقة ---
         st.write("---")
-        st.markdown("### 📊 الملخص المالي والتشغيلي")
+        st.markdown("### 📈 المؤشرات المالية والإنتاجية")
         
         rev_val = df_merged['إيراد الشركة من العميل'].sum()
         cost_val = df_merged['إجمالي المستحق للمندوب'].sum()
@@ -240,41 +277,41 @@ if perf_file and agent_info_file and car_fuel_file:
         
         with m1:
             st.markdown(f"""
-                <div class="metric-card card-blue">
-                    <div class="metric-title">إيرادات الشركة (SAR)</div>
-                    <div class="metric-value">{rev_val:,.2f}</div>
+                <div class="metric-card card-revenue">
+                    <div class="metric-title">إيرادات الشركة الإجمالية</div>
+                    <div class="metric-value">{rev_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
                 </div>
             """, unsafe_allow_html=True)
             
         with m2:
             st.markdown(f"""
-                <div class="metric-card card-red">
-                    <div class="metric-title">تكاليف المناديب (SAR)</div>
-                    <div class="metric-value">{cost_val:,.2f}</div>
+                <div class="metric-card card-cost">
+                    <div class="metric-title">إجمالي رواتب ومستحقات المناديب</div>
+                    <div class="metric-value">{cost_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
                 </div>
             """, unsafe_allow_html=True)
             
         with m3:
             st.markdown(f"""
-                <div class="metric-card card-green">
-                    <div class="metric-title">الربح الصافي للشركة (SAR)</div>
-                    <div class="metric-value">{profit_val:,.2f}</div>
+                <div class="metric-card card-profit">
+                    <div class="metric-title">الربح الصافي للشركة</div>
+                    <div class="metric-value">{profit_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
                 </div>
             """, unsafe_allow_html=True)
             
         with m4:
             st.markdown(f"""
-                <div class="metric-card card-purple">
-                    <div class="metric-title">إجمالي الطلبات التراكمي</div>
-                    <div class="metric-value">{orders_val:,.0f}</div>
+                <div class="metric-card card-orders">
+                    <div class="metric-title">إجمالي شحنات المشروع</div>
+                    <div class="metric-value">{orders_val:,.0f} <span style="font-size: 1rem; color: #64748B;">شحنة</span></div>
                 </div>
             """, unsafe_allow_html=True)
 
         st.write("")
         st.write("")
 
-        # --- 10. عرض الجدول التفصيلي برسم عصري ---
-        st.markdown("### 📋 كشف تفاصيل الأداء والرواتب")
+        # --- 10. جدول البيانات ---
+        st.markdown("### 📋 البيان التفصيلي لمستحقات المناديب والأرباح")
         
         display_cols = ['رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات الناجحة']
         if selected_client in ["Kita (كيتا)", "HungerStation (هنقرستيشن)"]: 
@@ -287,7 +324,7 @@ if perf_file and agent_info_file and car_fuel_file:
         final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
         st.dataframe(final_df, use_container_width=True)
 
-        # --- 11. زر التحميل المنظّم ---
+        # --- 11. زر التصدير ---
         def convert_df(df_to_save):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -295,7 +332,7 @@ if perf_file and agent_info_file and car_fuel_file:
             return output.getvalue()
 
         st.download_button(
-            "📥 تحميل كشف الرواتب والأرباح النهائي (Excel)", 
+            "📥 تصدير مسير الرواتب والأرباح إلى ملف Excel", 
             data=convert_df(final_df), 
             file_name=f"Advanced_Logistics_{selected_client}.xlsx"
         )
