@@ -2,26 +2,112 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="نظام التشغيل والأرباح", page_icon="🏢", layout="wide")
+# --- 1. إعدادات الصفحة والواجهة ---
+st.set_page_config(
+    page_title="لوحة تشغيل الحلول المتقدمة", 
+    page_icon="🚚", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# --- 2. إدخال تنسيقات CSS احترافية (Custom CSS) ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-    html, body, [class*="css"]  { font-family: 'Cairo', sans-serif; direction: rtl; text-align: right; }
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+    
+    /* تطبيق خط القاهرة والاتجاه */
+    html, body, [class*="css"], div, span, p {
+        font-family: 'Cairo', sans-serif !important;
+        direction: rtl;
+        text-align: right;
+    }
+    
+    /* خلفية الصفحة العامة */
+    .stApp {
+        background-color: #f4f6f9;
+    }
+    
+    /* الهيدر الرئيسي */
+    .main-header {
+        background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+        padding: 25px;
+        border-radius: 16px;
+        color: white;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 25px;
+    }
+    .main-header h1 { color: #FFFFFF !important; font-weight: 800; font-size: 2.2rem; margin: 0; }
+    .main-header p { color: #E0E7FF !important; font-size: 1.1rem; margin-top: 5px; }
+
+    /* بطاقات المؤشرات الماليّة (Custom Metrics) */
+    .metric-card {
+        background-color: #FFFFFF;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border-right: 6px solid #3B82F6;
+        transition: transform 0.2s ease-in-out;
+    }
+    .metric-card:hover { transform: translateY(-3px); }
+    .metric-title { color: #6B7280; font-size: 0.95rem; font-weight: 600; }
+    .metric-value { color: #1F2937; font-size: 1.8rem; font-weight: 800; margin-top: 5px; }
+    
+    /* الألوان للبطاقات المتنوعة */
+    .card-blue { border-right-color: #2563EB; }
+    .card-green { border-right-color: #059669; }
+    .card-red { border-right-color: #DC2626; }
+    .card-purple { border-right-color: #7C3AED; }
+
+    /* تحسين شكل صناديق رفع الملفات */
+    .stFileUploader {
+        background-color: #FFFFFF;
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px dashed #CBD5E1;
+    }
+    
+    /* أزرار التحميل والتفاعل */
+    .stButton>button, .stDownloadButton>button {
+        width: 100%;
+        background: linear-gradient(135deg, #059669 0%, #10B981 100%) !important;
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 1.1rem !important;
+        border-radius: 10px !important;
+        border: none !important;
+        padding: 12px 20px !important;
+        box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3) !important;
+    }
+    
+    /* القائمة الجانبية (Sidebar) */
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-left: 1px solid #E2E8F0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏢 النظام الشامل لإدارة الرواتب وأرباح التشغيل")
-st.caption("شركة الحلول المتقدمة | عقود (Supermall, Ninja, Kita, HungerStation)")
+# --- 3. الهيدر الرئيسي ---
+st.markdown("""
+    <div class="main-header">
+        <h1>🚚 لوحة إدارة الرواتب وأرباح التشغيل</h1>
+        <p>شركة الحلول المتقدمة للخدمات اللوجستية | Advanced Logistics Solutions</p>
+    </div>
+""", unsafe_allow_html=True)
 
-# --- تحديد العميل ---
-st.subheader("⚙️ إعدادات المشروع")
-selected_client = st.radio(
-    "اختر المشروع (العميل) المراد حساب رواتبه وأرباحه:", 
-    ["Supermall", "Ninja (نينجا)", "Kita (كيتا)", "HungerStation (هنقرستيشن)"]
-)
+# --- 4. القائمة الجانبية لإعداد المشروع ---
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/1554/1554284.png", width=80)
+    st.title("⚙️ خيارات العميل")
+    selected_client = st.radio(
+        "اختر العميل المراد حسابه:", 
+        ["Supermall", "Ninja (نينجا)", "Kita (كيتا)", "HungerStation (هنقرستيشن)"],
+        index=0
+    )
+    st.divider()
+    st.caption("برنامج معالجة البيانات التلقائي v2.0")
 
-# ----------------- دوال إيرادات الشركة -----------------
+# ----------------- 5. دوال إيرادات الشركة -----------------
 def calc_supermall_revenue(orders):
     if orders <= 400: return orders * 9
     elif orders <= 500: return orders * 10
@@ -29,8 +115,7 @@ def calc_supermall_revenue(orders):
     else: return orders * 12
 
 def calc_ninja_revenue(orders):
-    target = 460
-    base = 6500
+    target, base = 460, 6500
     if orders >= target: return base + ((orders - target) * 12)
     else:
         missing = target - orders
@@ -47,54 +132,49 @@ def calc_kita_revenue(orders, total_distance):
 
 def calc_hungerstation_revenue(orders, driver_status, extra_distance, quality_level):
     if pd.isna(orders) or orders == 0: return 0
-    
-    # تحديد السعر الأساسي وسعر الكيلومتر بناءً على حالة السائق (سيارات فقط)
-    is_high_perf = str(driver_status).strip() == 'عالي'
+    status = str(driver_status).strip()
+    is_high_perf = ('عالي' in status) or ('High' in status)
     base_fee = 8 if is_high_perf else 6
     km_rate = 1.15 if is_high_perf else 0.90
     
-    # تحديد مكافأة الجودة حسب المستوى
     bonus_map = {'A': 2.75, 'B': 2.25, 'C': 1.75, 'D': 1.25, 'E': 0.75, 'F': 0}
-    level = str(quality_level).strip().upper()
-    bonus_per_order = bonus_map.get(level, 0)
+    bonus_per_order = bonus_map.get(str(quality_level).strip().upper(), 0)
+    extra_dist_val = extra_distance if pd.notna(extra_distance) else 0
     
-    return (orders * base_fee) + (extra_distance * km_rate) + (orders * bonus_per_order)
+    return (orders * base_fee) + (extra_dist_val * km_rate) + (orders * bonus_per_order)
 
-# ----------------- دوال رواتب المناديب الداخلية -----------------
+# ----------------- 6. دوال الرواتب والبدلات -----------------
 def calc_kafala_salary(orders):
     if orders >= 550: return 2500 + 300 + ((orders - 550) * 8)
     elif 401 <= orders <= 549: return orders * 4
     else: return orders * 3
 
 def calc_freelancer_salary(orders, client):
-    # سياسة نينجا للفري لانسر
     if client == "Ninja (نينجا)":
-        if orders >= 460: return 5000 + ((orders - 460) * 8)
-        else: return orders * 7
-    # سياسة موحدة لبقية المشاريع
+        return (5000 + ((orders - 460) * 8)) if orders >= 460 else (orders * 7)
     else:
-        if orders >= 550: return 5000 + ((orders - 550) * 9)
-        else: return orders * 7
+        return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7)
 
 def calc_car_rent(owns_car, model_year):
     if str(owns_car).strip() == 'نعم':
         return 1200 if pd.notna(model_year) and int(model_year) >= 2015 else 1000
     return 0
 
-# ----------------- واجهة الرفع والمعالجة -----------------
-st.write("---")
-st.subheader("📂 مركز رفع البيانات")
-
-if selected_client == "Kita (كيتا)":
-    st.info("💡 تأكد أن تقرير الأداء يحتوي على عمود: 'المسافة' أو 'Distance'.")
-elif selected_client == "HungerStation (هنقرستيشن)":
-    st.info("💡 لـ هنقرستيشن: يفضل أن يحتوي تقرير الأداء على أعمدة: 'حالة السائق' (عالي/أساسي) ، 'المستوى' (A,B,C..)، و 'المسافة الإضافية'.")
+# ----------------- 7. منطقة رفع الملفات المنسقة -----------------
+st.subheader(f"📂 رفع ملفات مشروع: {selected_client}")
 
 col1, col2, col3 = st.columns(3)
-with col1: perf_file = st.file_uploader(f"1. تقرير أداء {selected_client}", type=['xlsx'])
-with col2: agent_info_file = st.file_uploader("2. بيانات المناديب (كفالة/فري لانسر)", type=['xlsx'])
-with col3: car_fuel_file = st.file_uploader("3. بيانات السيارات والبنزين", type=['xlsx'])
+with col1: 
+    st.markdown("**1. تقرير الأداء الشهري**")
+    perf_file = st.file_uploader("اختر ملف الإنتاجية", type=['xlsx'], key="u1")
+with col2: 
+    st.markdown("**2. بيانات المناديب**")
+    agent_info_file = st.file_uploader("اختر ملف المناديب", type=['xlsx'], key="u2")
+with col3: 
+    st.markdown("**3. السيارات والبنزين**")
+    car_fuel_file = st.file_uploader("اختر ملف السيارات", type=['xlsx'], key="u3")
 
+# ----------------- 8. معالجة البيانات وتصميم اللوحة -----------------
 if perf_file and agent_info_file and car_fuel_file:
     try:
         df_perf = pd.read_excel(perf_file)
@@ -110,20 +190,16 @@ if perf_file and agent_info_file and car_fuel_file:
         
         orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
         df_merged['الطلبات الناجحة'] = df_merged[orders_col].fillna(0)
-        
         if 'أيام العمل' not in df_merged.columns: df_merged['أيام العمل'] = 30
         
-        # أعمدة كيتا وهنقرستيشن
         dist_col = 'المسافة' if 'المسافة' in df_merged.columns else ('Distance' if 'Distance' in df_merged.columns else 'المسافة الإضافية')
         if dist_col not in df_merged.columns: df_merged[dist_col] = 0
-        
         status_col = 'حالة السائق' if 'حالة السائق' in df_merged.columns else 'Driver Status'
         if status_col not in df_merged.columns: df_merged[status_col] = 'أساسي'
-        
         level_col = 'المستوى' if 'المستوى' in df_merged.columns else 'Quality Level'
         if level_col not in df_merged.columns: df_merged[level_col] = 'F'
         
-        # حساب إيرادات الشركة
+        # حساب الإيرادات
         if selected_client == "Supermall":
             df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_supermall_revenue)
         elif selected_client == "Ninja (نينجا)":
@@ -135,11 +211,10 @@ if perf_file and agent_info_file and car_fuel_file:
                 lambda r: calc_hungerstation_revenue(r['الطلبات الناجحة'], r[status_col], r[dist_col], r[level_col]), axis=1
             )
 
-        # حساب رواتب المناديب
+        # حساب المستحقات
         def calc_agent_dues(row):
             agent_type = str(row.get('نوع المندوب', 'كفالة')).strip()
             orders = row['الطلبات الناجحة']
-            
             if agent_type == 'فري لانسر':
                 salary = calc_freelancer_salary(orders, selected_client)
                 return pd.Series([salary, 0, 0, salary])
@@ -152,15 +227,54 @@ if perf_file and agent_info_file and car_fuel_file:
         df_merged[['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
 
-        # ----------------- عرض النتائج -----------------
+        # --- 9. عرض بطاقات الأداء المنسقة (Custom Cards) ---
         st.write("---")
-        st.subheader(f"💰 لوحة الأرباح والتشغيل الشاملة - {selected_client}")
+        st.markdown("### 📊 الملخص المالي والتشغيلي")
         
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("إيرادات الشركة (قبل الصرف)", f"{df_merged['إيراد الشركة من العميل'].sum():,.2f} ريال")
-        c2.metric("إجمالي تكاليف المناديب", f"{df_merged['إجمالي المستحق للمندوب'].sum():,.2f} ريال", delta="-تكلفة", delta_color="inverse")
-        c3.metric("الربح الصافي للشركة", f"{df_merged['ربح الشركة الصافي'].sum():,.2f} ريال")
-        c4.metric("إجمالي الطلبات", f"{df_merged['الطلبات الناجحة'].sum():,.0f} طلب")
+        rev_val = df_merged['إيراد الشركة من العميل'].sum()
+        cost_val = df_merged['إجمالي المستحق للمندوب'].sum()
+        profit_val = df_merged['ربح الشركة الصافي'].sum()
+        orders_val = df_merged['الطلبات الناجحة'].sum()
+        
+        m1, m2, m3, m4 = st.columns(4)
+        
+        with m1:
+            st.markdown(f"""
+                <div class="metric-card card-blue">
+                    <div class="metric-title">إيرادات الشركة (SAR)</div>
+                    <div class="metric-value">{rev_val:,.2f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with m2:
+            st.markdown(f"""
+                <div class="metric-card card-red">
+                    <div class="metric-title">تكاليف المناديب (SAR)</div>
+                    <div class="metric-value">{cost_val:,.2f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with m3:
+            st.markdown(f"""
+                <div class="metric-card card-green">
+                    <div class="metric-title">الربح الصافي للشركة (SAR)</div>
+                    <div class="metric-value">{profit_val:,.2f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with m4:
+            st.markdown(f"""
+                <div class="metric-card card-purple">
+                    <div class="metric-title">إجمالي الطلبات التراكمي</div>
+                    <div class="metric-value">{orders_val:,.0f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.write("")
+        st.write("")
+
+        # --- 10. عرض الجدول التفصيلي برسم عصري ---
+        st.markdown("### 📋 كشف تفاصيل الأداء والرواتب")
         
         display_cols = ['رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات الناجحة']
         if selected_client in ["Kita (كيتا)", "HungerStation (هنقرستيشن)"]: 
@@ -168,18 +282,23 @@ if perf_file and agent_info_file and car_fuel_file:
         if selected_client == "HungerStation (هنقرستيشن)": 
             display_cols.extend([status_col, level_col])
             
-        display_cols.extend(['إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'])
+        display_cols.extend(['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'])
         
         final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
         st.dataframe(final_df, use_container_width=True)
 
+        # --- 11. زر التحميل المنظّم ---
         def convert_df(df_to_save):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_to_save.to_excel(writer, index=False, sheet_name='الرواتب والأرباح')
             return output.getvalue()
 
-        st.download_button("📥 تحميل التقرير الشامل (Excel)", data=convert_df(final_df), file_name=f"Payroll_Profit_{selected_client}.xlsx")
+        st.download_button(
+            "📥 تحميل كشف الرواتب والأرباح النهائي (Excel)", 
+            data=convert_df(final_df), 
+            file_name=f"Advanced_Logistics_{selected_client}.xlsx"
+        )
 
     except Exception as e:
-        st.error(f"حدث خطأ أثناء المعالجة: {e}")
+        st.error(f"حدث خطأ أثناء معالجة البيانات: {e}")
