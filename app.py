@@ -11,7 +11,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. قاعدة بيانات الربط الثابتة والأسماء المترجمة (قابل للتحديث مستقبلاً) ---
+# --- 2. قاعدة بيانات الربط الثابتة للنظام ---
 MASTER_DRIVERS_DATA = [
     {"ID": "96134", "Username": "elsiddiq-4466", "Iqama": "2550694711", "اسم المندوب": "الصديق الامين عباس قدوره", "Aliases": ["elsiddiq", "صديق", "الصديق الأمين", "elsiddiq-4466"]},
     {"ID": "96124", "Username": "ahmed-0071", "Iqama": "2497147245", "اسم المندوب": "احمد عبدالحميد ابراهيم سليمان", "Aliases": ["ahmed", "أحمد", "احمد عبد الحميد", "ahmed-0071"]},
@@ -52,7 +52,7 @@ st.markdown("""
         color: white;
         box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.2);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        margin-bottom: 30px;
+        margin-bottom: 25px;
         position: relative;
         overflow: hidden;
     }
@@ -62,21 +62,32 @@ st.markdown("""
         top: 0; right: 0; width: 8px; height: 100%;
         background: linear-gradient(180deg, #38BDF8 0%, #EF4444 100%);
     }
-    .main-header h1 { color: #FFFFFF !important; font-weight: 900; font-size: 2.4rem; margin: 0; }
-    .main-header p { color: #94A3B8 !important; font-size: 1.15rem; margin-top: 8px; font-weight: 600; }
+    .main-header h1 { color: #FFFFFF !important; font-weight: 900; font-size: 2.3rem; margin: 0; }
+    .main-header p { color: #94A3B8 !important; font-size: 1.1rem; margin-top: 8px; font-weight: 600; }
+
+    .info-summary-box {
+        background: #FFFFFF;
+        border-radius: 14px;
+        padding: 18px 25px;
+        margin-bottom: 25px;
+        border-right: 6px solid #38BDF8;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    .info-summary-box h4 { margin: 0 0 8px 0; color: #1E293B; font-weight: 800; font-size: 1.2rem; }
+    .info-summary-box p { margin: 3px 0; color: #475569; font-weight: 600; font-size: 1rem; }
 
     .metric-card {
         background: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(10px);
         border-radius: 16px;
-        padding: 24px;
+        padding: 22px;
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
         border: 1px solid #E2E8F0;
         transition: all 0.3s ease;
     }
-    .metric-card:hover { transform: translateY(-5px); }
-    .metric-title { color: #64748B; font-size: 1rem; font-weight: 700; }
-    .metric-value { color: #0F172A; font-size: 2.1rem; font-weight: 900; margin-top: 8px; }
+    .metric-card:hover { transform: translateY(-4px); }
+    .metric-title { color: #64748B; font-size: 0.95rem; font-weight: 700; }
+    .metric-value { color: #0F172A; font-size: 2rem; font-weight: 900; margin-top: 6px; }
     
     .card-revenue { border-top: 4px solid #38BDF8; }
     .card-cost { border-top: 4px solid #EF4444; }
@@ -127,7 +138,7 @@ with st.sidebar:
         index=0
     )
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v10.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v13.0")
 
 # ----------------- 6. دوال الإيرادات -----------------
 def calc_supermall_revenue(orders):
@@ -216,8 +227,8 @@ with col2:
     st.markdown("**2. بيانات المناديب**")
     agent_info_file = st.file_uploader("اختر ملف المناديب", type=['xlsx'], key="u3")
 with col3: 
-    st.markdown("**3. السيارات والبنزين**")
-    car_fuel_file = st.file_uploader("اختر ملف السيارات والبنزين", type=['xlsx'], key="u2")
+    st.markdown("**3. استهلاك السيارات والبنزين**")
+    car_fuel_file = st.file_uploader("اختر ملف البنزين والسيارات", type=['xlsx'], key="u2")
 
 # ----------------- 10. المعالجة وعرض النتائج -----------------
 if perf_file and agent_info_file and car_fuel_file:
@@ -250,9 +261,18 @@ if perf_file and agent_info_file and car_fuel_file:
         # 3. دمج الإنتاجية مع بيانات المناديب
         df_merged = pd.merge(df_perf, df_agents, on='Iqama', how='left', suffixes=('', '_agents'))
 
-        # 4. معالجة البنزين بالاسم العربي/الإنجليزي الذكي
-        if 'اسم السائق' in df_cars.columns and 'القيمة' in df_cars.columns:
-            def calculate_fuel_amount(row):
+        # 4. قراءة وتجميع مبالغ ولترات البنزين مباشرة من التقرير بدون معادلات ثابتة
+        driver_col_fuel = 'السائقين المعينين للمركبة' if 'السائقين المعينين للمركبة' in df_cars.columns else ('اسم السائق' if 'اسم السائق' in df_cars.columns else None)
+        cost_col_fuel = 'إجمالي المبلغ المستخدم' if 'إجمالي المبلغ المستخدم' in df_cars.columns else ('القيمة' if 'القيمة' in df_cars.columns else None)
+        liters_col_fuel = 'عدد اللترات' if 'عدد اللترات' in df_cars.columns else ('اللترات' if 'اللترات' in df_cars.columns else None)
+
+        if driver_col_fuel and cost_col_fuel:
+            df_cars_clean = df_cars.copy()
+            df_cars_clean[cost_col_fuel] = pd.to_numeric(df_cars_clean[cost_col_fuel], errors='coerce').fillna(0)
+            if liters_col_fuel:
+                df_cars_clean[liters_col_fuel] = pd.to_numeric(df_cars_clean[liters_col_fuel], errors='coerce').fillna(0)
+
+            def extract_fuel_and_liters_direct(row):
                 agent_name = row.get('اسم المندوب', '')
                 username = row.get('Username', '')
                 
@@ -262,48 +282,73 @@ if perf_file and agent_info_file and car_fuel_file:
                         aliases = master_row.get('Aliases', [])
                         break
 
-                total_fuel = 0
-                for _, car_row in df_cars.iterrows():
-                    driver_fuel_name = car_row['اسم السائق']
-                    if matches_driver_name(agent_name, driver_fuel_name, aliases) or matches_driver_name(username, driver_fuel_name, aliases):
-                        total_fuel += pd.to_numeric(car_row['القيمة'], errors='coerce') or 0
-                return total_fuel
+                total_cost = 0
+                total_liters = 0
 
-            df_merged['مخصص البنزين'] = df_merged.apply(calculate_fuel_amount, axis=1)
+                for _, car_row in df_cars_clean.iterrows():
+                    fuel_driver_name = str(car_row[driver_col_fuel])
+                    if matches_driver_name(agent_name, fuel_driver_name, aliases) or matches_driver_name(username, fuel_driver_name, aliases):
+                        total_cost += car_row[cost_col_fuel]
+                        if liters_col_fuel:
+                            total_liters += car_row[liters_col_fuel]
+
+                return pd.Series([total_cost, round(total_liters, 1)])
+
+            df_merged[['مخصص البنزين', 'كمية البنزين (لتر)']] = df_merged.apply(extract_fuel_and_liters_direct, axis=1)
         else:
             df_merged['مخصص البنزين'] = 0
+            df_merged['كمية البنزين (لتر)'] = 0
 
-        # تجهيز عمود الطلبات
+        # 5. استخراج التواريخ والساعات والغياب
+        date_cols = [c for c in df_perf.columns if 'Delivered' in c and c != 'Grand Total Delivered']
+        dates_found = [c.replace(' Delivered', '').strip() for c in date_cols]
+        date_range_str = " - ".join(dates_found) if dates_found else "الفترة الحالية"
+
+        hours_col = 'Grand Total Hours' if 'Grand Total Hours' in df_merged.columns else 'إجمالي ساعات العمل'
+        if hours_col in df_merged.columns:
+            df_merged['إجمالي ساعات العمل'] = pd.to_numeric(df_merged[hours_col], errors='coerce').fillna(0).round(2)
+        else:
+            df_merged['إجمالي ساعات العمل'] = 0
+
+        def check_attendance_status(row):
+            tot_hours = row.get('إجمالي ساعات العمل', 0)
+            tot_orders = pd.to_numeric(row.get('Grand Total Delivered', 0), errors='coerce') or 0
+            
+            if tot_hours == 0 and tot_orders == 0:
+                return "غائب ❌"
+            elif tot_hours < 8:
+                return "تأخير / ساعات غير مكتملة ⚠️"
+            else:
+                return "منتظم ✅"
+
+        df_merged['حالة الحضور والتأخير'] = df_merged.apply(check_attendance_status, axis=1)
+
+        city_name = "المدينة المنورة (MEDMS01)"
+        if 'City' in df_merged.columns and not df_merged['City'].dropna().empty:
+            city_code = df_merged['City'].dropna().iloc[0]
+            if city_code == 'MEDMS01': city_name = "المدينة المنورة (MEDMS01)"
+
         orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
-        df_merged['الطلبات الناجحة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
-        
-        if 'أيام العمل' not in df_merged.columns: df_merged['أيام العمل'] = 30
-        
-        dist_col = 'المسافة' if 'المسافة' in df_merged.columns else ('Distance' if 'Distance' in df_merged.columns else 'المسافة الإضافية')
-        if dist_col not in df_merged.columns: df_merged[dist_col] = 0
-
-        status_col = 'حالة السائق' if 'حالة السائق' in df_merged.columns else 'Driver Status'
-        if status_col not in df_merged.columns: df_merged[status_col] = 'أساسي'
-        
-        level_col = 'المستوى' if 'المستوى' in df_merged.columns else 'Quality Level'
-        if level_col not in df_merged.columns: df_merged[level_col] = 'F'
+        df_merged['الطلبات المحققة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
 
         # حساب الإيرادات
         if selected_client == "Supermall":
-            df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_supermall_revenue)
+            df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'].apply(calc_supermall_revenue)
         elif selected_client == "Ninja (نينجا)":
-            df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_ninja_revenue)
+            df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'].apply(calc_ninja_revenue)
         elif selected_client == "Kita (كيتا)":
-            df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_kita_revenue(r['الطلبات الناجحة'], r[dist_col]), axis=1)
+            dist_col = 'المسافة' if 'المسافة' in df_merged.columns else 'Distance'
+            df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_kita_revenue(r['الطلبات المحققة'], r.get(dist_col, 0)), axis=1)
         elif selected_client == "HungerStation (هنقرستيشن)":
+            dist_col = 'المسافة' if 'المسافة' in df_merged.columns else 'Distance'
             df_merged['إيراد الشركة من العميل'] = df_merged.apply(
-                lambda r: calc_hungerstation_revenue(r['الطلبات الناجحة'], r[status_col], r[dist_col], r[level_col]), axis=1
+                lambda r: calc_hungerstation_revenue(r['الطلبات المحققة'], r.get('Driver Status', 'أساسي'), r.get(dist_col, 0), r.get('Quality Level', 'F')), axis=1
             )
 
         # حساب المستحقات
         def calc_agent_dues(row):
             agent_type = str(row.get('نوع المندوب', 'كفالة')).strip()
-            orders = row['الطلبات الناجحة']
+            orders = row['الطلبات المحققة']
             if agent_type == 'فري لانسر':
                 salary = calc_freelancer_salary(orders, selected_client)
                 return pd.Series([salary, 0, salary])
@@ -316,17 +361,26 @@ if perf_file and agent_info_file and car_fuel_file:
         df_merged[['راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
 
-        # تنظيف شكل الأعمدة للعرض
         df_merged.rename(columns={'Iqama': 'رقم الإقامة'}, inplace=True)
 
-        # --- 11. بطاقات الأداء المنسقة ---
+        # --- 10. ملخص الإحصائيات العلوية ---
         st.write("---")
+        st.markdown(f"""
+            <div class="info-summary-box">
+                <h4>📌 معلومات التقرير والتشغيل العامة</h4>
+                <p>📍 <b>المدينة:</b> {city_name}</p>
+                <p>📅 <b>نطاق التقرير الأداء:</b> من <b>{date_range_str}</b></p>
+                <p>⚠️ <b>حالة الحضور والتأخير:</b> يوضح الجدول أدناه السائقين الحاضرين والمترددين أو الغائبين واستهلاك البنزين المأخوذ فعلياً باللتر والمبلغ.</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # --- 11. بطاقات الأداء المنسقة ---
         st.markdown("### 📈 المؤشرات المالية والإنتاجية")
         
         rev_val = df_merged['إيراد الشركة من العميل'].sum()
         cost_val = df_merged['إجمالي المستحق للمندوب'].sum()
         profit_val = df_merged['ربح الشركة الصافي'].sum()
-        orders_val = df_merged['الطلبات الناجحة'].sum()
+        orders_val = df_merged['الطلبات المحققة'].sum()
         
         m1, m2, m3, m4 = st.columns(4)
         
@@ -357,7 +411,7 @@ if perf_file and agent_info_file and car_fuel_file:
         with m4:
             st.markdown(f"""
                 <div class="metric-card card-orders">
-                    <div class="metric-title">إجمالي شحنات المشروع</div>
+                    <div class="metric-title">إجمالي الشحنات المحققة</div>
                     <div class="metric-value">{orders_val:,.0f} <span style="font-size: 1rem; color: #64748B;">شحنة</span></div>
                 </div>
             """, unsafe_allow_html=True)
@@ -365,16 +419,14 @@ if perf_file and agent_info_file and car_fuel_file:
         st.write("")
         st.write("")
 
-        # --- 12. جدول البيانات ---
-        st.markdown("### 📋 البيان التفصيلي لمستحقات المناديب والأرباح")
+        # --- 12. جدول البيانات الشامل ---
+        st.markdown("### 📋 البيان التفصيلي المطور لمستحقات المناديب والأرباح")
         
-        display_cols = ['ID', 'Username', 'رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات الناجحة']
-        if selected_client in ["Kita (كيتا)", "HungerStation (هنقرستيشن)"]: 
-            display_cols.append(dist_col)
-        if selected_client == "HungerStation (هنقرستيشن)": 
-            display_cols.extend([status_col, level_col])
-            
-        display_cols.extend(['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'])
+        display_cols = [
+            'ID', 'Username', 'رقم الإقامة', 'اسم المندوب', 'حالة الحضور والتأخير', 
+            'إجمالي ساعات العمل', 'الطلبات المحققة', 'كمية البنزين (لتر)', 'مخصص البنزين', 
+            'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'
+        ]
         
         final_df = df_merged.loc[:, ~df_merged.columns.duplicated()]
         final_df = final_df[[c for c in display_cols if c in final_df.columns]]
