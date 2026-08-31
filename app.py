@@ -125,7 +125,7 @@ with st.sidebar:
         index=0
     )
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v4.1")
+    st.caption("نظام الحسابات اللوجستية الموحد v4.2")
 
 # ----------------- 6. دوال الإيرادات -----------------
 def calc_supermall_revenue(orders):
@@ -180,46 +180,42 @@ def calc_car_rent(owns_car, model_year):
         return 1200 if pd.notna(model_year) and int(model_year) >= 2015 else 1000
     return 0
 
-# ----------------- 8. دالة تنظيف ومطابقة البيانات الذكية -----------------
-def clean_and_normalize_df(df):
-    # إزالة الأعمدة المكررة إن وجدت في نفس الملف
+# ----------------- 8. دالة توحيد وتنظيف الأسماء والأعمدة -----------------
+def normalize_and_fix_iqama(df):
     df = df.loc[:, ~df.columns.duplicated()].copy()
     
-    # توحيد مسمى عمود الإقامة
+    # توحيد اسم عمود الإقامة مهما كانت طريقة كتابته
     for col in list(df.columns):
-        if col.strip().lower() in ['iqama', 'رقم الاقامة', 'الاقامة', 'رقم الإقامة']:
+        col_clean = str(col).strip().lower()
+        if col_clean in ['iqama', 'رقم الاقامة', 'الاقامة', 'رقم الإقامة', 'اقامة', 'رقم الهوية', 'الهوية']:
             df.rename(columns={col: 'رقم الإقامة'}, inplace=True)
-            
+
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+    
     if 'رقم الإقامة' in df.columns:
-        # إزالة التكرار في العمود نفسه إن وجد مرتين
-        df = df.loc[:, ~df.columns.duplicated()]
         df['رقم الإقامة'] = df['رقم الإقامة'].astype(str).str.strip().str.replace('.0', '', regex=False)
     
     return df
 
 def enrich_with_master_db(df):
-    df = clean_and_normalize_df(df)
+    df = normalize_and_fix_iqama(df)
 
     match_col = None
-    for c in ['رقم الإقامة', 'Iqama']:
-        if c in df.columns:
-            match_col = (c, 'Iqama')
-            break
-    if not match_col:
-        for c in ['ID', 'الرقم الوظيفي', 'رقم المندوب']:
-            if c in df.columns:
+    if 'رقم الإقامة' in df.columns:
+        match_col = ('رقم الإقامة', 'Iqama')
+    else:
+        for c in df.columns:
+            if str(c).strip().lower() in ['id', 'الرقم الوظيفي', 'رقم المندوب']:
                 match_col = (c, 'ID')
                 break
-    if not match_col:
-        for c in ['Username', 'اسم المستخدم', 'يوزر المندوب']:
-            if c in df.columns:
+            elif str(c).strip().lower() in ['username', 'اسم المستخدم', 'يوزر المندوب']:
                 match_col = (c, 'Username')
                 break
                 
     if match_col:
         df[match_col[0]] = df[match_col[0]].astype(str).str.strip()
         df = pd.merge(df, df_master_db, left_on=match_col[0], right_on=match_col[1], how='left', suffixes=('', '_db'))
-        df = clean_and_normalize_df(df)
+        df = normalize_and_fix_iqama(df)
         if 'اسم المندوب_db' in df.columns:
             if 'اسم المندوب' in df.columns:
                 df['اسم المندوب'] = df['اسم المندوب_db'].combine_first(df['اسم المندوب'])
@@ -227,7 +223,7 @@ def enrich_with_master_db(df):
                 df['اسم المندوب'] = df['اسم المندوب_db']
             df.drop(columns=['اسم المندوب_db'], inplace=True, errors='ignore')
             
-    return clean_and_normalize_df(df)
+    return normalize_and_fix_iqama(df)
 
 # ----------------- 9. منطقة رفع الملفات -----------------
 st.markdown(f"### 📂 مركز رفع بيانات مشروع: `{selected_client}`")
@@ -250,144 +246,145 @@ if perf_file and agent_info_file and car_fuel_file:
         df_agents = pd.read_excel(agent_info_file)
         df_cars = pd.read_excel(car_fuel_file)
         
-        # تنظيف وإثراء البيانات
         df_perf = enrich_with_master_db(df_perf)
         df_agents = enrich_with_master_db(df_agents)
         df_cars = enrich_with_master_db(df_cars)
         
-        # دمج البيانات بأمان بدون تكرار أعمدة الإقامة
-        df_merged = pd.merge(df_perf, df_agents, on='رقم الإقامة', how='left', suffixes=('', '_agent'))
-        df_merged = clean_and_normalize_df(df_merged)
-        
-        df_merged = pd.merge(df_merged, df_cars, on='رقم الإقامة', how='left', suffixes=('', '_car'))
-        df_merged = clean_and_normalize_df(df_merged)
-        
-        if 'اسم المندوب_agent' in df_merged.columns:
-            df_merged['اسم المندوب'] = df_merged['اسم المندوب'].combine_first(df_merged['اسم المندوب_agent'])
-            df_merged.drop(columns=['اسم المندوب_agent'], inplace=True, errors='ignore')
-
-        orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
-        if orders_col in df_merged.columns:
-            df_merged['الطلبات الناجحة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
+        # التأكد من وجود عمود رقم الإقامة للدمج
+        if 'رقم الإقامة' not in df_perf.columns or 'رقم الإقامة' not in df_agents.columns:
+            st.error("⚠️ لم يتم العثور على عمود الإقامة/الهوية في أحد الملفات المرفوعة. يرجى التأكد من وجود العمود.")
         else:
-            df_merged['الطلبات الناجحة'] = 0
-        
-        if 'أيام العمل' not in df_merged.columns: df_merged['أيام العمل'] = 30
-        else: df_merged['أيام العمل'] = pd.to_numeric(df_merged['أيام العمل'], errors='coerce').fillna(30)
-        
-        dist_col = 'المسافة' if 'المسافة' in df_merged.columns else ('Distance' if 'Distance' in df_merged.columns else 'المسافة الإضافية')
-        if dist_col not in df_merged.columns: df_merged[dist_col] = 0
-        else: df_merged[dist_col] = pd.to_numeric(df_merged[dist_col], errors='coerce').fillna(0)
+            df_merged = pd.merge(df_perf, df_agents, on='رقم الإقامة', how='left', suffixes=('', '_agent'))
+            df_merged = normalize_and_fix_iqama(df_merged)
+            
+            df_merged = pd.merge(df_merged, df_cars, on='رقم الإقامة', how='left', suffixes=('', '_car'))
+            df_merged = normalize_and_fix_iqama(df_merged)
+            
+            if 'اسم المندوب_agent' in df_merged.columns:
+                df_merged['اسم المندوب'] = df_merged['اسم المندوب'].combine_first(df_merged['اسم المندوب_agent'])
+                df_merged.drop(columns=['اسم المندوب_agent'], inplace=True, errors='ignore')
 
-        status_col = 'حالة السائق' if 'حالة السائق' in df_merged.columns else 'Driver Status'
-        if status_col not in df_merged.columns: df_merged[status_col] = 'أساسي'
-        
-        level_col = 'المستوى' if 'المستوى' in df_merged.columns else 'Quality Level'
-        if level_col not in df_merged.columns: df_merged[level_col] = 'F'
-        
-        # حساب الإيرادات
-        if selected_client == "Supermall":
-            df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_supermall_revenue)
-        elif selected_client == "Ninja (نينجا)":
-            df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_ninja_revenue)
-        elif selected_client == "Kita (كيتا)":
-            df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_kita_revenue(r['الطلبات الناجحة'], r[dist_col]), axis=1)
-        elif selected_client == "HungerStation (هنقرستيشن)":
-            df_merged['إيراد الشركة من العميل'] = df_merged.apply(
-                lambda r: calc_hungerstation_revenue(r['الطلبات الناجحة'], r[status_col], r[dist_col], r[level_col]), axis=1
-            )
-
-        # حساب المستحقات
-        def calc_agent_dues(row):
-            agent_type = str(row.get('نوع المندوب', 'كفالة')).strip()
-            orders = row['الطلبات الناجحة']
-            if agent_type == 'فري لانسر':
-                salary = calc_freelancer_salary(orders, selected_client)
-                return pd.Series([salary, 0, 0, salary])
+            orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
+            if orders_col in df_merged.columns:
+                df_merged['الطلبات الناجحة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
             else:
-                salary = calc_kafala_salary(orders)
-                car_rent = calc_car_rent(row.get('يمتلك سيارة', 'لا'), row.get('موديل السيارة', 2000))
-                fuel = (row['أيام العمل'] * 40) if pd.notna(row['أيام العمل']) else 0
-                return pd.Series([salary, car_rent, fuel, salary + car_rent + fuel])
-
-        df_merged[['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
-        df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
-
-        # --- 11. بطاقات الأداء المنسقة ---
-        st.write("---")
-        st.markdown("### 📈 المؤشرات المالية والإنتاجية")
-        
-        rev_val = df_merged['إيراد الشركة من العميل'].sum()
-        cost_val = df_merged['إجمالي المستحق للمندوب'].sum()
-        profit_val = df_merged['ربح الشركة الصافي'].sum()
-        orders_val = df_merged['الطلبات الناجحة'].sum()
-        
-        m1, m2, m3, m4 = st.columns(4)
-        
-        with m1:
-            st.markdown(f"""
-                <div class="metric-card card-revenue">
-                    <div class="metric-title">إيرادات الشركة الإجمالية</div>
-                    <div class="metric-value">{rev_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
-                </div>
-            """, unsafe_allow_html=True)
+                df_merged['الطلبات الناجحة'] = 0
             
-        with m2:
-            st.markdown(f"""
-                <div class="metric-card card-cost">
-                    <div class="metric-title">إجمالي رواتب ومستحقات المناديب</div>
-                    <div class="metric-value">{cost_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
-                </div>
-            """, unsafe_allow_html=True)
+            if 'أيام العمل' not in df_merged.columns: df_merged['أيام العمل'] = 30
+            else: df_merged['أيام العمل'] = pd.to_numeric(df_merged['أيام العمل'], errors='coerce').fillna(30)
             
-        with m3:
-            st.markdown(f"""
-                <div class="metric-card card-profit">
-                    <div class="metric-title">الربح الصافي للشركة</div>
-                    <div class="metric-value">{profit_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
-                </div>
-            """, unsafe_allow_html=True)
+            dist_col = 'المسافة' if 'المسافة' in df_merged.columns else ('Distance' if 'Distance' in df_merged.columns else 'المسافة الإضافية')
+            if dist_col not in df_merged.columns: df_merged[dist_col] = 0
+            else: df_merged[dist_col] = pd.to_numeric(df_merged[dist_col], errors='coerce').fillna(0)
+
+            status_col = 'حالة السائق' if 'حالة السائق' in df_merged.columns else 'Driver Status'
+            if status_col not in df_merged.columns: df_merged[status_col] = 'أساسي'
             
-        with m4:
-            st.markdown(f"""
-                <div class="metric-card card-orders">
-                    <div class="metric-title">إجمالي شحنات المشروع</div>
-                    <div class="metric-value">{orders_val:,.0f} <span style="font-size: 1rem; color: #64748B;">شحنة</span></div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        st.write("")
-        st.write("")
-
-        # --- 12. جدول البيانات ---
-        st.markdown("### 📋 البيان التفصيلي لمستحقات المناديب والأرباح")
-        
-        display_cols = ['ID', 'Username', 'رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات الناجحة']
-        if selected_client in ["Kita (كيتا)", "HungerStation (هنقرستيشن)"]: 
-            display_cols.append(dist_col)
-        if selected_client == "HungerStation (هنقرستيشن)": 
-            display_cols.extend([status_col, level_col])
+            level_col = 'المستوى' if 'المستوى' in df_merged.columns else 'Quality Level'
+            if level_col not in df_merged.columns: df_merged[level_col] = 'F'
             
-        display_cols.extend(['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'])
-        
-        # تصفية الأعمدة ومنع أي تكرار مجدداً
-        final_df = df_merged.loc[:, ~df_merged.columns.duplicated()]
-        final_df = final_df[[c for c in display_cols if c in final_df.columns]]
-        
-        st.dataframe(final_df, use_container_width=True)
+            # حساب الإيرادات
+            if selected_client == "Supermall":
+                df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_supermall_revenue)
+            elif selected_client == "Ninja (نينجا)":
+                df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_ninja_revenue)
+            elif selected_client == "Kita (كيتا)":
+                df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_kita_revenue(r['الطلبات الناجحة'], r[dist_col]), axis=1)
+            elif selected_client == "HungerStation (هنقرستيشن)":
+                df_merged['إيراد الشركة من العميل'] = df_merged.apply(
+                    lambda r: calc_hungerstation_revenue(r['الطلبات الناجحة'], r[status_col], r[dist_col], r[level_col]), axis=1
+                )
 
-        # --- 13. زر التصدير ---
-        def convert_df(df_to_save):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_to_save.to_excel(writer, index=False, sheet_name='الرواتب والأرباح')
-            return output.getvalue()
+            # حساب المستحقات
+            def calc_agent_dues(row):
+                agent_type = str(row.get('نوع المندوب', 'كفالة')).strip()
+                orders = row['الطلبات الناجحة']
+                if agent_type == 'فري لانسر':
+                    salary = calc_freelancer_salary(orders, selected_client)
+                    return pd.Series([salary, 0, 0, salary])
+                else:
+                    salary = calc_kafala_salary(orders)
+                    car_rent = calc_car_rent(row.get('يمتلك سيارة', 'لا'), row.get('موديل السيارة', 2000))
+                    fuel = (row['أيام العمل'] * 40) if pd.notna(row['أيام العمل']) else 0
+                    return pd.Series([salary, car_rent, fuel, salary + car_rent + fuel])
 
-        st.download_button(
-            "📥 تصدير مسير الرواتب والأرباح إلى ملف Excel", 
-            data=convert_df(final_df), 
-            file_name=f"Advanced_Logistics_{selected_client}.xlsx"
-        )
+            df_merged[['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
+            df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
+
+            # --- 11. بطاقات الأداء المنسقة ---
+            st.write("---")
+            st.markdown("### 📈 المؤشرات المالية والإنتاجية")
+            
+            rev_val = df_merged['إيراد الشركة من العميل'].sum()
+            cost_val = df_merged['إجمالي المستحق للمندوب'].sum()
+            profit_val = df_merged['ربح الشركة الصافي'].sum()
+            orders_val = df_merged['الطلبات الناجحة'].sum()
+            
+            m1, m2, m3, m4 = st.columns(4)
+            
+            with m1:
+                st.markdown(f"""
+                    <div class="metric-card card-revenue">
+                        <div class="metric-title">إيرادات الشركة الإجمالية</div>
+                        <div class="metric-value">{rev_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+            with m2:
+                st.markdown(f"""
+                    <div class="metric-card card-cost">
+                        <div class="metric-title">إجمالي رواتب ومستحقات المناديب</div>
+                        <div class="metric-value">{cost_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+            with m3:
+                st.markdown(f"""
+                    <div class="metric-card card-profit">
+                        <div class="metric-title">الربح الصافي للشركة</div>
+                        <div class="metric-value">{profit_val:,.2f} <span style="font-size: 1rem; color: #64748B;">SAR</span></div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+            with m4:
+                st.markdown(f"""
+                    <div class="metric-card card-orders">
+                        <div class="metric-title">إجمالي شحنات المشروع</div>
+                        <div class="metric-value">{orders_val:,.0f} <span style="font-size: 1rem; color: #64748B;">شحنة</span></div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            st.write("")
+            st.write("")
+
+            # --- 12. جدول البيانات ---
+            st.markdown("### 📋 البيان التفصيلي لمستحقات المناديب والأرباح")
+            
+            display_cols = ['ID', 'Username', 'رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات الناجحة']
+            if selected_client in ["Kita (كيتا)", "HungerStation (هنقرستيشن)"]: 
+                display_cols.append(dist_col)
+            if selected_client == "HungerStation (هنقرستيشن)": 
+                display_cols.extend([status_col, level_col])
+                
+            display_cols.extend(['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'])
+            
+            final_df = df_merged.loc[:, ~df_merged.columns.duplicated()]
+            final_df = final_df[[c for c in display_cols if c in final_df.columns]]
+            
+            st.dataframe(final_df, use_container_width=True)
+
+            # --- 13. زر التصدير ---
+            def convert_df(df_to_save):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df_to_save.to_excel(writer, index=False, sheet_name='الرواتب والأرباح')
+                return output.getvalue()
+
+            st.download_button(
+                "📥 تصدير مسير الرواتب والأرباح إلى ملف Excel", 
+                data=convert_df(final_df), 
+                file_name=f"Advanced_Logistics_{selected_client}.xlsx"
+            )
 
     except Exception as e:
         st.error(f"حدث خطأ أثناء معالجة البيانات: {e}")
