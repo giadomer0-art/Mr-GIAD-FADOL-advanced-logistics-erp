@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import re
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -10,19 +11,20 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. قاعدة بيانات المناديب الثابتة للنظام ---
+# --- 2. قاعدة بيانات الربط الثابتة والأسماء المترجمة (قابل للتحديث مستقبلاً) ---
 MASTER_DRIVERS_DATA = [
-    {"ID": "96134", "Username": "elsiddiq-4466", "Iqama": "2550694711", "اسم المندوب": "الصديق الامين عباس قدوره"},
-    {"ID": "96124", "Username": "ahmed-0071", "Iqama": "2497147245", "اسم المندوب": "احمد عبدالحميد ابراهيم سليمان"},
-    {"ID": "96122", "Username": "muhammad-6696", "Iqama": "2560541662", "اسم المندوب": "MUHAMMAD IQBAL"},
-    {"ID": "96120", "Username": "md-1669", "Iqama": "2614977490", "اسم المندوب": "مد جوني"},
-    {"ID": "96117", "Username": "nahid-2691", "Iqama": "2572574180", "اسم المندوب": "نهاد مولا"}
+    {"ID": "96134", "Username": "elsiddiq-4466", "Iqama": "2550694711", "اسم المندوب": "الصديق الامين عباس قدوره", "Aliases": ["elsiddiq", "صديق", "الصديق الأمين", "elsiddiq-4466"]},
+    {"ID": "96124", "Username": "ahmed-0071", "Iqama": "2497147245", "اسم المندوب": "احمد عبدالحميد ابراهيم سليمان", "Aliases": ["ahmed", "أحمد", "احمد عبد الحميد", "ahmed-0071"]},
+    {"ID": "96122", "Username": "muhammad-6696", "Iqama": "2560541662", "اسم المندوب": "MUHAMMAD IQBAL", "Aliases": ["muhammad iqbal", "محمد إقبال", "محمد اقبال", "muhammad-6696"]},
+    {"ID": "96120", "Username": "md-1669", "Iqama": "2614977490", "اسم المندوب": "مد جوني", "Aliases": ["md jony", "md johnny", "مد جوني", "md-1669", "md joni"]},
+    {"ID": "96117", "Username": "nahid-2691", "Iqama": "2572574180", "اسم المندوب": "نهاد مولا", "Aliases": ["nahid mollah", "nahid", "نهاد مولا", "نهادمولا", "nahid-2691"]}
 ]
+
 df_master_db = pd.DataFrame(MASTER_DRIVERS_DATA)
 for col in ['ID', 'Username', 'Iqama']:
-    df_master_db[col] = df_master_db[col].astype(str).str.strip()
+    df_master_db[col] = df_master_db[col].astype(str).str.strip().str.replace('.0', '', regex=False)
 
-# --- 3. التصميم الاحترافي (UI Customization) ---
+# --- 3. التنسيق والواجهة (UI Customization) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
@@ -125,7 +127,7 @@ with st.sidebar:
         index=0
     )
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v5.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v10.0")
 
 # ----------------- 6. دوال الإيرادات -----------------
 def calc_supermall_revenue(orders):
@@ -180,58 +182,28 @@ def calc_car_rent(owns_car, model_year):
         return 1200 if pd.notna(model_year) and int(model_year) >= 2015 else 1000
     return 0
 
-# ----------------- 8. محرك قراءة وتنظيف البيانات الذكي المتطور -----------------
-def smart_read_excel(uploaded_file):
-    df = pd.read_excel(uploaded_file)
-    # البحث عن صف الهيدر الصحيح إن كانت هناك أسطر فارغة
-    if not any(col in ['Iqama', 'ID', 'Username', 'رقم الإقامة', 'الاقامة', 'رقم الهوية'] for col in df.columns):
-        for i in range(min(10, len(df))):
-            row_vals = [str(x).strip().lower() for x in df.iloc[i].values]
-            if any(k in row_vals for k in ['iqama', 'id', 'username', 'رقم الإقامة', 'الاقامة', 'رقم الاقامة', 'الرقم الوظيفي']):
-                uploaded_file.seek(0)
-                df = pd.read_excel(uploaded_file, header=i+1)
-                break
+# ----------------- 8. محرك المطابقة والتنظيف الذكي -----------------
+def normalize_name(text):
+    if pd.isna(text): return ""
+    text = str(text).lower().strip()
+    text = re.sub(r'[\W_]+', ' ', text)
+    text = re.sub(r'[أإآ]', 'ا', text)
+    text = re.sub(r'ى', 'ي', text)
+    text = re.sub(r'ة', 'ه', text)
+    return text.strip()
+
+def matches_driver_name(name1, name2, aliases=[]):
+    n1 = normalize_name(name1)
+    n2 = normalize_name(name2)
     
-    df = df.loc[:, ~df.columns.duplicated()].copy()
+    if not n1 or not n2: return False
+    if n1 in n2 or n2 in n1: return True
     
-    # توحيد اسم عمود الإقامة والربط
-    for col in list(df.columns):
-        c_clean = str(col).strip().lower()
-        if c_clean in ['iqama', 'رقم الاقامة', 'الاقامة', 'رقم الإقامة', 'اقامة', 'رقم الهوية', 'الهوية']:
-            df.rename(columns={col: 'رقم الإقامة'}, inplace=True)
-        elif c_clean in ['id', 'الرقم الوظيفي', 'رقم المندوب']:
-            df.rename(columns={col: 'ID'}, inplace=True)
-        elif c_clean in ['username', 'اسم المستخدم', 'يوزر المندوب']:
-            df.rename(columns={col: 'Username'}, inplace=True)
-            
-    df = df.loc[:, ~df.columns.duplicated()].copy()
-    return df
-
-def align_df_with_master_db(df):
-    df = smart_read_excel(df)
-    
-    # الربط بقاعدة البيانات الثابتة لاستكمال البيانات الناقصة
-    if 'رقم الإقامة' in df.columns:
-        df['رقم الإقامة'] = df['رقم الإقامة'].astype(str).str.strip().str.replace('.0', '', regex=False)
-        df = pd.merge(df, df_master_db, on='Iqama', how='left', suffixes=('', '_db'))
-    elif 'ID' in df.columns:
-        df['ID'] = df['ID'].astype(str).str.strip().str.replace('.0', '', regex=False)
-        df = pd.merge(df, df_master_db, on='ID', how='left', suffixes=('', '_db'))
-    elif 'Username' in df.columns:
-        df['Username'] = df['Username'].astype(str).str.strip()
-        df = pd.merge(df, df_master_db, on='Username', how='left', suffixes=('', '_db'))
-
-    if 'Iqama' in df.columns and 'رقم الإقامة' not in df.columns:
-        df['رقم الإقامة'] = df['Iqama']
-
-    if 'اسم المندوب_db' in df.columns:
-        if 'اسم المندوب' in df.columns:
-            df['اسم المندوب'] = df['اسم المندوب_db'].combine_first(df['اسم المندوب'])
-        else:
-            df['اسم المندوب'] = df['اسم المندوب_db']
-        df.drop(columns=['اسم المندوب_db'], inplace=True, errors='ignore')
-
-    return df.loc[:, ~df.columns.duplicated()].copy()
+    for alias in aliases:
+        a_norm = normalize_name(alias)
+        if a_norm and (a_norm in n1 or a_norm in n2 or n1 in a_norm or n2 in a_norm):
+            return True
+    return False
 
 # ----------------- 9. منطقة رفع الملفات -----------------
 st.markdown(f"### 📂 مركز رفع بيانات مشروع: `{selected_client}`")
@@ -242,49 +214,80 @@ with col1:
     perf_file = st.file_uploader("اختر ملف الإنتاجية", type=['xlsx'], key="u1")
 with col2: 
     st.markdown("**2. بيانات المناديب**")
-    agent_info_file = st.file_uploader("اختر ملف المناديب", type=['xlsx'], key="u2")
+    agent_info_file = st.file_uploader("اختر ملف المناديب", type=['xlsx'], key="u3")
 with col3: 
     st.markdown("**3. السيارات والبنزين**")
-    car_fuel_file = st.file_uploader("اختر ملف السيارات", type=['xlsx'], key="u3")
+    car_fuel_file = st.file_uploader("اختر ملف السيارات والبنزين", type=['xlsx'], key="u2")
 
 # ----------------- 10. المعالجة وعرض النتائج -----------------
 if perf_file and agent_info_file and car_fuel_file:
     try:
-        df_perf = align_df_with_master_db(perf_file)
-        df_agents = align_df_with_master_db(agent_info_file)
-        df_cars = align_df_with_master_db(car_fuel_file)
-        
-        # الدمج الشامل المباشر بمرونة عالية
-        merge_key = 'رقم الإقامة' if ('رقم الإقامة' in df_perf.columns and 'رقم الإقامة' in df_agents.columns) else ('ID' if 'ID' in df_perf.columns else 'Username')
-        
-        df_merged = pd.merge(df_perf, df_agents, on=merge_key, how='left', suffixes=('', '_agent'))
-        df_merged = pd.merge(df_merged, df_cars, on=merge_key, how='left', suffixes=('', '_car'))
-        
-        df_merged = df_merged.loc[:, ~df_merged.columns.duplicated()].copy()
+        df_perf = pd.read_excel(perf_file)
+        df_agents = pd.read_excel(agent_info_file)
+        df_cars = pd.read_excel(car_fuel_file)
 
-        if 'اسم المندوب_agent' in df_merged.columns:
-            df_merged['اسم المندوب'] = df_merged['اسم المندوب'].combine_first(df_merged['اسم المندوب_agent'])
+        # 1. تنظيف معرّفات ملف الإنتاجية
+        for col in ['ID', 'Username', 'Iqama']:
+            if col in df_perf.columns:
+                df_perf[col] = df_perf[col].astype(str).str.strip().str.replace('.0', '', regex=False)
 
-        # تجهيز أرقام الطلبات
-        orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
-        if orders_col in df_merged.columns:
-            df_merged['الطلبات الناجحة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
+        # ربط تقرير الإنتاجية بقاعدة البيانات الثابتة
+        df_perf = pd.merge(df_perf, df_master_db, on='ID', how='left', suffixes=('', '_db'))
+        if 'Iqama_db' in df_perf.columns:
+            df_perf['Iqama'] = df_perf['Iqama'].replace('nan', None).combine_first(df_perf['Iqama_db'])
+            df_perf.drop(columns=['Iqama_db'], inplace=True, errors='ignore')
+        if 'اسم المندوب_db' in df_perf.columns:
+            df_perf['اسم المندوب'] = df_perf.get('اسم المندوب', pd.Series()).combine_first(df_perf['اسم المندوب_db'])
+            df_perf.drop(columns=['اسم المندوب_db'], inplace=True, errors='ignore')
+
+        # 2. تنظيف ملف المناديب
+        for col in df_agents.columns:
+            if str(col).strip() in ['رقم الإقامة', 'Iqama', 'رقم الاقامة']:
+                df_agents.rename(columns={col: 'Iqama'}, inplace=True)
+        if 'Iqama' in df_agents.columns:
+            df_agents['Iqama'] = df_agents['Iqama'].astype(str).str.strip().str.replace('.0', '', regex=False)
+
+        # 3. دمج الإنتاجية مع بيانات المناديب
+        df_merged = pd.merge(df_perf, df_agents, on='Iqama', how='left', suffixes=('', '_agents'))
+
+        # 4. معالجة البنزين بالاسم العربي/الإنجليزي الذكي
+        if 'اسم السائق' in df_cars.columns and 'القيمة' in df_cars.columns:
+            def calculate_fuel_amount(row):
+                agent_name = row.get('اسم المندوب', '')
+                username = row.get('Username', '')
+                
+                aliases = []
+                for _, master_row in df_master_db.iterrows():
+                    if matches_driver_name(agent_name, master_row['اسم المندوب']) or username == master_row['Username']:
+                        aliases = master_row.get('Aliases', [])
+                        break
+
+                total_fuel = 0
+                for _, car_row in df_cars.iterrows():
+                    driver_fuel_name = car_row['اسم السائق']
+                    if matches_driver_name(agent_name, driver_fuel_name, aliases) or matches_driver_name(username, driver_fuel_name, aliases):
+                        total_fuel += pd.to_numeric(car_row['القيمة'], errors='coerce') or 0
+                return total_fuel
+
+            df_merged['مخصص البنزين'] = df_merged.apply(calculate_fuel_amount, axis=1)
         else:
-            df_merged['الطلبات الناجحة'] = 0
+            df_merged['مخصص البنزين'] = 0
+
+        # تجهيز عمود الطلبات
+        orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
+        df_merged['الطلبات الناجحة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
         
         if 'أيام العمل' not in df_merged.columns: df_merged['أيام العمل'] = 30
-        else: df_merged['أيام العمل'] = pd.to_numeric(df_merged['أيام العمل'], errors='coerce').fillna(30)
         
         dist_col = 'المسافة' if 'المسافة' in df_merged.columns else ('Distance' if 'Distance' in df_merged.columns else 'المسافة الإضافية')
         if dist_col not in df_merged.columns: df_merged[dist_col] = 0
-        else: df_merged[dist_col] = pd.to_numeric(df_merged[dist_col], errors='coerce').fillna(0)
 
         status_col = 'حالة السائق' if 'حالة السائق' in df_merged.columns else 'Driver Status'
         if status_col not in df_merged.columns: df_merged[status_col] = 'أساسي'
         
         level_col = 'المستوى' if 'المستوى' in df_merged.columns else 'Quality Level'
         if level_col not in df_merged.columns: df_merged[level_col] = 'F'
-        
+
         # حساب الإيرادات
         if selected_client == "Supermall":
             df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات الناجحة'].apply(calc_supermall_revenue)
@@ -303,15 +306,18 @@ if perf_file and agent_info_file and car_fuel_file:
             orders = row['الطلبات الناجحة']
             if agent_type == 'فري لانسر':
                 salary = calc_freelancer_salary(orders, selected_client)
-                return pd.Series([salary, 0, 0, salary])
+                return pd.Series([salary, 0, salary])
             else:
                 salary = calc_kafala_salary(orders)
                 car_rent = calc_car_rent(row.get('يمتلك سيارة', 'لا'), row.get('موديل السيارة', 2000))
-                fuel = (row['أيام العمل'] * 40) if pd.notna(row['أيام العمل']) else 0
-                return pd.Series([salary, car_rent, fuel, salary + car_rent + fuel])
+                fuel = row['مخصص البنزين']
+                return pd.Series([salary, car_rent, salary + car_rent + fuel])
 
-        df_merged[['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
+        df_merged[['راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
+
+        # تنظيف شكل الأعمدة للعرض
+        df_merged.rename(columns={'Iqama': 'رقم الإقامة'}, inplace=True)
 
         # --- 11. بطاقات الأداء المنسقة ---
         st.write("---")
