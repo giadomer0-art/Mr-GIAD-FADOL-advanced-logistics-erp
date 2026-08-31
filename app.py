@@ -56,7 +56,7 @@ with st.sidebar:
     st.markdown("## ⚙️ إدارة المشاريع")
     selected_client = st.radio("اختر العميل المراد حسابه:", ["Supermall", "Ninja (نينجا)", "Kita (كيتا)", "HungerStation (هنقرستيشن)"], index=0)
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v22.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v23.0")
 
 # ----------------- 5. دوال الإيرادات للشركة -----------------
 def calc_supermall_revenue(orders):
@@ -92,16 +92,14 @@ def calc_hungerstation_revenue(orders, driver_status, extra_distance, quality_le
     extra_dist_val = extra_distance if pd.notna(extra_distance) else 0
     return (orders * base_fee) + (extra_dist_val * km_rate) + (orders * bonus_per_order)
 
-# ----------------- 6. دالة الرواتب الموحدة لجميع المشاريع (كفالة و فري لانسر) -----------------
+# ----------------- 6. دالة الرواتب الموحدة لجميع المشاريع -----------------
 def calc_salary_by_project(orders, client, is_freelance):
     if client == "Ninja (نينجا)":
         return (5000 + ((orders - 460) * 8)) if orders >= 460 else (orders * 7.0)
 
     if is_freelance:
-        # نظام الفري لانسر يطبق على أي تطبيق في حال تم كتابة (حر)
         return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7.0)
             
-    # نظام الكفالة الموحد
     if orders >= 550:
         return 2500 + 300 + ((orders - 550) * 8)
     elif 401 <= orders <= 549:
@@ -109,9 +107,8 @@ def calc_salary_by_project(orders, client, is_freelance):
     else:
         return orders * 3.0
 
-# ----------------- 7. دالة بدل السيارة الذكية (قراءة الملاحظات والتقسيم التلقائي للأيام) -----------------
+# ----------------- 7. دالة بدل السيارة الذكية -----------------
 def get_smart_car_allowance(row, report_days):
-    # دمج كامل بيانات المندوب في سطر نصي واحد للبحث عن الكلمات الدلالية
     row_str = " ".join(str(v).lower() for v in row.values).replace('ة', 'ه')
     full_allowance = 0
     
@@ -120,15 +117,13 @@ def get_smart_car_allowance(row, report_days):
     elif 'بدل سياره قديم' in row_str:
         full_allowance = 1000
     elif 'بدل سياره' in row_str:
-        full_allowance = 1000  # الوضع الافتراضي عند كتابة (بدل سيارة) بدون تحديد
+        full_allowance = 1000  
     else:
-        # للرجوع للأنظمة القديمة في حال تم استخدامها
         owns = str(row.get('يمتلك سيارة', '')).strip()
         if owns == 'نعم':
             mod_yr = pd.to_numeric(row.get('موديل السيارة', 0), errors='coerce')
             full_allowance = 1200 if mod_yr >= 2015 else 1000
             
-    # التقسيم التلقائي على أيام التقرير المرفوع
     if full_allowance > 0:
         if report_days >= 28:
             return full_allowance
@@ -221,7 +216,6 @@ if perf_file and agent_info_file and car_fuel_file:
         else:
             df_merged['مخصص البنزين'] = 0; df_merged['كمية البنزين (لتر)'] = 0
 
-        # احتساب عدد أيام التقرير المرفوع لقسمة البدل عليها
         date_cols = [c for c in df_perf.columns if 'Delivered' in c and c != 'Grand Total Delivered']
         dates_found = [c.replace(' Delivered', '').strip() for c in date_cols]
         report_days = len(dates_found) if len(dates_found) > 0 else 30
@@ -245,31 +239,29 @@ if perf_file and agent_info_file and car_fuel_file:
         elif selected_client == "Kita (كيتا)": df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_kita_revenue(r['الطلبات المحققة'], r.get('Distance', 0)), axis=1)
         elif selected_client == "HungerStation (هنقرستيشن)": df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_hungerstation_revenue(r['الطلبات المحققة'], r.get('Driver Status', 'أساسي'), r.get('Distance', 0), r.get('Quality Level', 'F')), axis=1)
 
-        # دالة المستحقات الذكية لـ (الفري لانسر والسيارات)
+        # دالة المستحقات: الراتب + البدل فقط
         def calc_agent_dues_final(row):
             orders = row['الطلبات المحققة']
-            
-            # فحص كلمة حر أو فري لانسر في أي مكان ببيانات المندوب
             row_str = " ".join(str(v).lower() for v in row.values)
+            
             if selected_client == "Ninja (نينجا)":
                 is_freelance = True
             else:
                 is_freelance = ('فري' in row_str) or ('freelance' in row_str) or ('حر' in row_str)
             
             salary = calc_salary_by_project(orders, selected_client, is_freelance)
-            
-            # احتساب بدل السيارة والمخصصات
             car_rent = get_smart_car_allowance(row, report_days)
-            fuel = row['مخصص البنزين']
 
-            # إذا كان فري لانسر لا يضاف له بنزين الشركة (لكن إذا منُح بدل سيارة استثنائياً سيضاف له)
-            if is_freelance:
-                return pd.Series([salary, car_rent, salary + car_rent])
-            else:
-                return pd.Series([salary, car_rent, salary + car_rent + fuel])
+            # إجمالي المستحق للمندوب (بدون إضافة مصروف البنزين)
+            total_dues = salary + car_rent
+            
+            return pd.Series([salary, car_rent, total_dues])
 
         df_merged[['راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues_final, axis=1)
-        df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
+        
+        # ربح الشركة الصافي = إيراد الشركة - (مستحقات المندوب + البنزين المستهلك للشركة)
+        df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب'] - df_merged['مخصص البنزين']
+        
         df_merged.rename(columns={'Iqama': 'رقم الإقامة'}, inplace=True)
 
         # --- 11. واجهة العرض ---
@@ -279,7 +271,7 @@ if perf_file and agent_info_file and car_fuel_file:
                 <h4>📌 معلومات التقرير والتشغيل العامة</h4>
                 <p>📍 <b>المدينة:</b> المدينة المنورة (MEDMS01)</p>
                 <p>📅 <b>عدد أيام التقرير للتقسيم المالي:</b> {report_days} يوم.</p>
-                <p>⚠️ <b>ملاحظة:</b> النظام يقرأ الآن الكلمات الدلالية (حر، بدل سيارة جديد/قديم) تلقائياً ويطبق الرواتب والتقسيم الزمني بمرونة تامة.</p>
+                <p>✅ <b>تم فصل المصروفات:</b> "إجمالي المستحق للمندوب" يمثل الآن (الراتب + بدل السيارة) فقط ليكون جاهزاً للتحويل البنكي. والبنزين يُحسم من إيراد الشركة كمنصرفات تشغيلية لحساب الربح الصافي.</p>
             </div>
         """, unsafe_allow_html=True)
 
