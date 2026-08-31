@@ -56,7 +56,7 @@ with st.sidebar:
     st.markdown("## ⚙️ إدارة المشاريع")
     selected_client = st.radio("اختر العميل المراد حسابه:", ["Supermall", "Ninja (نينجا)", "Kita (كيتا)", "HungerStation (هنقرستيشن)"], index=0)
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v19.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v22.0")
 
 # ----------------- 5. دوال الإيرادات للشركة -----------------
 def calc_supermall_revenue(orders):
@@ -92,44 +92,52 @@ def calc_hungerstation_revenue(orders, driver_status, extra_distance, quality_le
     extra_dist_val = extra_distance if pd.notna(extra_distance) else 0
     return (orders * base_fee) + (extra_dist_val * km_rate) + (orders * bonus_per_order)
 
-# ----------------- 6. دوال الرواتب الدقيقة والمخصصة لكل مشروع -----------------
-def calc_salary_by_project(orders, client, agent_type='كفالة'):
-    agent_type_str = str(agent_type).strip() if pd.notna(agent_type) else 'كفالة'
-    is_freelance = ('فري' in agent_type_str) or ('Freelance' in agent_type_str) or ('حر' in agent_type_str)
-    
-    if client == "Supermall":
-        if is_freelance:
-            # الفري لانسر لسوبرمول
-            return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7.0)
-        else:
-            # الكفالة لسوبرمول
-            if orders >= 550:
-                return 2500 + 300 + ((orders - 550) * 8)
-            elif 401 <= orders <= 549:
-                return orders * 4.0
-            else:
-                return orders * 3.0
-                
-    elif client == "Ninja (نينجا)":
-        # نينجا (الفري لانسر والكفالة)
+# ----------------- 6. دالة الرواتب الموحدة لجميع المشاريع (كفالة و فري لانسر) -----------------
+def calc_salary_by_project(orders, client, is_freelance):
+    if client == "Ninja (نينجا)":
         return (5000 + ((orders - 460) * 8)) if orders >= 460 else (orders * 7.0)
 
-    elif client in ["Kita (كيتا)", "HungerStation (هنقرستيشن)"]:
-        # كيتا وهنقرستيشن (لا يوجد فري لانسر، ونفس حسبة كفالة سوبرمول)
-        if orders >= 550:
-            return 2500 + 300 + ((orders - 550) * 8)
-        elif 401 <= orders <= 549:
-            return orders * 4.0
-        else:
-            return orders * 3.0
+    if is_freelance:
+        # نظام الفري لانسر يطبق على أي تطبيق في حال تم كتابة (حر)
+        return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7.0)
+            
+    # نظام الكفالة الموحد
+    if orders >= 550:
+        return 2500 + 300 + ((orders - 550) * 8)
+    elif 401 <= orders <= 549:
+        return orders * 4.0
+    else:
+        return orders * 3.0
 
-    return orders * 3.0
-
-def calc_car_rent(owns_car, model_year):
-    if str(owns_car).strip() == 'نعم': return 1200 if pd.notna(model_year) and int(model_year) >= 2015 else 1000
+# ----------------- 7. دالة بدل السيارة الذكية (قراءة الملاحظات والتقسيم التلقائي للأيام) -----------------
+def get_smart_car_allowance(row, report_days):
+    # دمج كامل بيانات المندوب في سطر نصي واحد للبحث عن الكلمات الدلالية
+    row_str = " ".join(str(v).lower() for v in row.values).replace('ة', 'ه')
+    full_allowance = 0
+    
+    if 'بدل سياره جديد' in row_str:
+        full_allowance = 1200
+    elif 'بدل سياره قديم' in row_str:
+        full_allowance = 1000
+    elif 'بدل سياره' in row_str:
+        full_allowance = 1000  # الوضع الافتراضي عند كتابة (بدل سيارة) بدون تحديد
+    else:
+        # للرجوع للأنظمة القديمة في حال تم استخدامها
+        owns = str(row.get('يمتلك سيارة', '')).strip()
+        if owns == 'نعم':
+            mod_yr = pd.to_numeric(row.get('موديل السيارة', 0), errors='coerce')
+            full_allowance = 1200 if mod_yr >= 2015 else 1000
+            
+    # التقسيم التلقائي على أيام التقرير المرفوع
+    if full_allowance > 0:
+        if report_days >= 28:
+            return full_allowance
+        elif report_days > 0:
+            return round((full_allowance / 30) * report_days, 2)
+            
     return 0
 
-# ----------------- 7. محرك المطابقة المطور -----------------
+# ----------------- 8. محرك المطابقة المطور -----------------
 def normalize_name(text):
     if pd.isna(text): return ""
     text = str(text).lower().strip()
@@ -154,25 +162,23 @@ def matches_driver_name(name_agent, name_fuel, aliases=[]):
                 return True
     return False
 
-# ----------------- 8. منطقة رفع الملفات -----------------
+# ----------------- 9. منطقة رفع الملفات -----------------
 st.markdown(f"### 📂 مركز رفع بيانات مشروع: `{selected_client}`")
 col1, col2, col3 = st.columns(3)
 with col1: perf_file = st.file_uploader("1. تقرير الأداء الشهري", type=['xlsx'], key="u1")
 with col2: agent_info_file = st.file_uploader("2. بيانات المناديب", type=['xlsx'], key="u3")
 with col3: car_fuel_file = st.file_uploader("3. استهلاك البنزين والسيارات", type=['xlsx'], key="u2")
 
-# ----------------- 9. المعالجة وعرض النتائج -----------------
+# ----------------- 10. المعالجة وعرض النتائج -----------------
 if perf_file and agent_info_file and car_fuel_file:
     try:
         df_perf = pd.read_excel(perf_file)
         df_agents = pd.read_excel(agent_info_file)
         df_cars = pd.read_excel(car_fuel_file)
 
-        # تنظيف المعرفات
         for col in ['ID', 'Username', 'Iqama']:
             if col in df_perf.columns: df_perf[col] = df_perf[col].astype(str).str.strip().str.replace('.0', '', regex=False)
 
-        # دمج قاعدة البيانات
         df_perf = pd.merge(df_perf, df_master_db, on='ID', how='left', suffixes=('', '_db'))
         if 'Iqama_db' in df_perf.columns: df_perf['Iqama'] = df_perf['Iqama'].replace('nan', None).combine_first(df_perf['Iqama_db'])
         if 'اسم المندوب_db' in df_perf.columns: df_perf['اسم المندوب'] = df_perf.get('اسم المندوب', pd.Series()).combine_first(df_perf['اسم المندوب_db'])
@@ -180,14 +186,11 @@ if perf_file and agent_info_file and car_fuel_file:
         for col in df_agents.columns:
             c_clean = str(col).strip()
             if c_clean in ['رقم الإقامة', 'Iqama', 'رقم الاقامة']: df_agents.rename(columns={col: 'Iqama'}, inplace=True)
-            elif c_clean in ['نوع المندوب', 'نوع العقد', 'النوع']: df_agents.rename(columns={col: 'نوع المندوب'}, inplace=True)
+            elif c_clean in ['نوع المندوب', 'نوع العقد', 'النوع', 'ملاحظات']: df_agents.rename(columns={col: 'نوع المندوب'}, inplace=True)
         if 'Iqama' in df_agents.columns: df_agents['Iqama'] = df_agents['Iqama'].astype(str).str.strip().str.replace('.0', '', regex=False)
 
-        # دمج ملف المناديب
         df_merged = pd.merge(df_perf, df_agents, on='Iqama', how='left', suffixes=('', '_agents'))
-        df_merged['نوع المندوب'] = df_merged.get('نوع المندوب', pd.Series()).fillna('كفالة')
 
-        # معالجة البنزين بدقة
         driver_col_fuel = 'السائقين المعينين للمركبة' if 'السائقين المعينين للمركبة' in df_cars.columns else ('اسم السائق' if 'اسم السائق' in df_cars.columns else None)
         cost_col_fuel = 'إجمالي المبلغ المستخدم' if 'إجمالي المبلغ المستخدم' in df_cars.columns else ('القيمة' if 'القيمة' in df_cars.columns else None)
         liters_col_fuel = 'عدد اللترات' if 'عدد اللترات' in df_cars.columns else ('اللترات' if 'اللترات' in df_cars.columns else None)
@@ -200,7 +203,6 @@ if perf_file and agent_info_file and car_fuel_file:
             def extract_fuel_precise(row):
                 agent_name = row.get('اسم المندوب', '')
                 username = row.get('Username', '')
-                
                 aliases = []
                 for _, master_row in df_master_db.iterrows():
                     if matches_driver_name(agent_name, master_row['اسم المندوب']) or username == master_row['Username']:
@@ -219,7 +221,11 @@ if perf_file and agent_info_file and car_fuel_file:
         else:
             df_merged['مخصص البنزين'] = 0; df_merged['كمية البنزين (لتر)'] = 0
 
-        # أوقات، ساعات وغياب
+        # احتساب عدد أيام التقرير المرفوع لقسمة البدل عليها
+        date_cols = [c for c in df_perf.columns if 'Delivered' in c and c != 'Grand Total Delivered']
+        dates_found = [c.replace(' Delivered', '').strip() for c in date_cols]
+        report_days = len(dates_found) if len(dates_found) > 0 else 30
+
         hours_col = 'Grand Total Hours' if 'Grand Total Hours' in df_merged.columns else 'إجمالي ساعات العمل'
         df_merged['إجمالي ساعات العمل'] = pd.to_numeric(df_merged[hours_col], errors='coerce').fillna(0).round(2) if hours_col in df_merged.columns else 0
 
@@ -239,26 +245,41 @@ if perf_file and agent_info_file and car_fuel_file:
         elif selected_client == "Kita (كيتا)": df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_kita_revenue(r['الطلبات المحققة'], r.get('Distance', 0)), axis=1)
         elif selected_client == "HungerStation (هنقرستيشن)": df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_hungerstation_revenue(r['الطلبات المحققة'], r.get('Driver Status', 'أساسي'), r.get('Distance', 0), r.get('Quality Level', 'F')), axis=1)
 
-        # تطبيق دالة الرواتب الشاملة
+        # دالة المستحقات الذكية لـ (الفري لانسر والسيارات)
         def calc_agent_dues_final(row):
             orders = row['الطلبات المحققة']
-            agent_type = row.get('نوع المندوب', 'كفالة')
-            salary = calc_salary_by_project(orders, selected_client, agent_type)
-            car_rent = calc_car_rent(row.get('يمتلك سيارة', 'لا'), row.get('موديل السيارة', 2000))
+            
+            # فحص كلمة حر أو فري لانسر في أي مكان ببيانات المندوب
+            row_str = " ".join(str(v).lower() for v in row.values)
+            if selected_client == "Ninja (نينجا)":
+                is_freelance = True
+            else:
+                is_freelance = ('فري' in row_str) or ('freelance' in row_str) or ('حر' in row_str)
+            
+            salary = calc_salary_by_project(orders, selected_client, is_freelance)
+            
+            # احتساب بدل السيارة والمخصصات
+            car_rent = get_smart_car_allowance(row, report_days)
             fuel = row['مخصص البنزين']
-            return pd.Series([salary, car_rent, salary + car_rent + fuel])
+
+            # إذا كان فري لانسر لا يضاف له بنزين الشركة (لكن إذا منُح بدل سيارة استثنائياً سيضاف له)
+            if is_freelance:
+                return pd.Series([salary, car_rent, salary + car_rent])
+            else:
+                return pd.Series([salary, car_rent, salary + car_rent + fuel])
 
         df_merged[['راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues_final, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
         df_merged.rename(columns={'Iqama': 'رقم الإقامة'}, inplace=True)
 
-        # --- 10. واجهة العرض ---
+        # --- 11. واجهة العرض ---
         st.write("---")
         st.markdown(f"""
             <div class="info-summary-box">
                 <h4>📌 معلومات التقرير والتشغيل العامة</h4>
                 <p>📍 <b>المدينة:</b> المدينة المنورة (MEDMS01)</p>
-                <p>⚠️ <b>ملاحظة:</b> تم اعتماد شرائح الرواتب الدقيقة لجميع المشاريع (سوبرمول، نينجا، كيتا، وهنقرستيشن) بنجاح.</p>
+                <p>📅 <b>عدد أيام التقرير للتقسيم المالي:</b> {report_days} يوم.</p>
+                <p>⚠️ <b>ملاحظة:</b> النظام يقرأ الآن الكلمات الدلالية (حر، بدل سيارة جديد/قديم) تلقائياً ويطبق الرواتب والتقسيم الزمني بمرونة تامة.</p>
             </div>
         """, unsafe_allow_html=True)
 
