@@ -138,7 +138,7 @@ with st.sidebar:
         index=0
     )
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v13.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v17.0")
 
 # ----------------- 6. دوال الإيرادات -----------------
 def calc_supermall_revenue(orders):
@@ -176,17 +176,32 @@ def calc_hungerstation_revenue(orders, driver_status, extra_distance, quality_le
     
     return (orders * base_fee) + (extra_dist_val * km_rate) + (orders * bonus_per_order)
 
-# ----------------- 7. دوال الرواتب والبدلات -----------------
-def calc_kafala_salary(orders):
-    if orders >= 550: return 2500 + 300 + ((orders - 550) * 8)
-    elif 401 <= orders <= 549: return orders * 4
-    else: return orders * 3
+# ----------------- 7. دوال الرواتب المخصصة لكل مشروع -----------------
+def calc_salary_by_project(orders, client, agent_type='كفالة'):
+    agent_type_str = str(agent_type).strip() if pd.notna(agent_type) else 'كفالة'
+    is_freelance = ('فري' in agent_type_str) or ('Freelance' in agent_type_str) or ('حر' in agent_type_str)
+    
+    if client == "Supermall":
+        if is_freelance:
+            return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7.0)
+        else:
+            if orders >= 550:
+                return 2500 + 300 + ((orders - 550) * 8)
+            elif 401 <= orders <= 549:
+                return orders * 4.0
+            else:
+                return orders * 3.0
+                
+    elif client == "Ninja (نينجا)":
+        return (5000 + ((orders - 460) * 8)) if orders >= 460 else (orders * 7.0)
 
-def calc_freelancer_salary(orders, client):
-    if client == "Ninja (نينجا)":
-        return (5000 + ((orders - 460) * 8)) if orders >= 460 else (orders * 7)
-    else:
-        return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7)
+    elif client == "Kita (كيتا)":
+        return orders * 4.0
+
+    elif client == "HungerStation (هنقرستيشن)":
+        return orders * 4.5
+
+    return orders * 3.0
 
 def calc_car_rent(owns_car, model_year):
     if str(owns_car).strip() == 'نعم':
@@ -253,15 +268,27 @@ if perf_file and agent_info_file and car_fuel_file:
 
         # 2. تنظيف ملف المناديب
         for col in df_agents.columns:
-            if str(col).strip() in ['رقم الإقامة', 'Iqama', 'رقم الاقامة']:
+            c_clean = str(col).strip()
+            if c_clean in ['رقم الإقامة', 'Iqama', 'رقم الاقامة']:
                 df_agents.rename(columns={col: 'Iqama'}, inplace=True)
+            elif c_clean in ['نوع المندوب', 'نوع العقد', 'النوع']:
+                df_agents.rename(columns={col: 'نوع المندوب'}, inplace=True)
+
         if 'Iqama' in df_agents.columns:
             df_agents['Iqama'] = df_agents['Iqama'].astype(str).str.strip().str.replace('.0', '', regex=False)
 
+        if 'نوع المندوب' not in df_agents.columns:
+            df_agents['نوع المندوب'] = 'كفالة'
+
         # 3. دمج الإنتاجية مع بيانات المناديب
         df_merged = pd.merge(df_perf, df_agents, on='Iqama', how='left', suffixes=('', '_agents'))
+        
+        if 'نوع المندوب' in df_merged.columns:
+            df_merged['نوع المندوب'] = df_merged['نوع المندوب'].fillna('كفالة')
+        else:
+            df_merged['نوع المندوب'] = 'كفالة'
 
-        # 4. قراءة وتجميع مبالغ ولترات البنزين مباشرة من التقرير بدون معادلات ثابتة
+        # 4. تصفية ملف استهلاك البنزين (استبعاد الإداريين والموظفين غير التابعين لقائمة المناديب)
         driver_col_fuel = 'السائقين المعينين للمركبة' if 'السائقين المعينين للمركبة' in df_cars.columns else ('اسم السائق' if 'اسم السائق' in df_cars.columns else None)
         cost_col_fuel = 'إجمالي المبلغ المستخدم' if 'إجمالي المبلغ المستخدم' in df_cars.columns else ('القيمة' if 'القيمة' in df_cars.columns else None)
         liters_col_fuel = 'عدد اللترات' if 'عدد اللترات' in df_cars.columns else ('اللترات' if 'اللترات' in df_cars.columns else None)
@@ -272,7 +299,7 @@ if perf_file and agent_info_file and car_fuel_file:
             if liters_col_fuel:
                 df_cars_clean[liters_col_fuel] = pd.to_numeric(df_cars_clean[liters_col_fuel], errors='coerce').fillna(0)
 
-            def extract_fuel_and_liters_direct(row):
+            def extract_fuel_and_liters_filtered(row):
                 agent_name = row.get('اسم المندوب', '')
                 username = row.get('Username', '')
                 
@@ -287,6 +314,7 @@ if perf_file and agent_info_file and car_fuel_file:
 
                 for _, car_row in df_cars_clean.iterrows():
                     fuel_driver_name = str(car_row[driver_col_fuel])
+                    # الربط فقط بالأسماء التابعة لقائمة مناديب التوصيل المعتمدة
                     if matches_driver_name(agent_name, fuel_driver_name, aliases) or matches_driver_name(username, fuel_driver_name, aliases):
                         total_cost += car_row[cost_col_fuel]
                         if liters_col_fuel:
@@ -294,7 +322,7 @@ if perf_file and agent_info_file and car_fuel_file:
 
                 return pd.Series([total_cost, round(total_liters, 1)])
 
-            df_merged[['مخصص البنزين', 'كمية البنزين (لتر)']] = df_merged.apply(extract_fuel_and_liters_direct, axis=1)
+            df_merged[['مخصص البنزين', 'كمية البنزين (لتر)']] = df_merged.apply(extract_fuel_and_liters_filtered, axis=1)
         else:
             df_merged['مخصص البنزين'] = 0
             df_merged['كمية البنزين (لتر)'] = 0
@@ -345,20 +373,16 @@ if perf_file and agent_info_file and car_fuel_file:
                 lambda r: calc_hungerstation_revenue(r['الطلبات المحققة'], r.get('Driver Status', 'أساسي'), r.get(dist_col, 0), r.get('Quality Level', 'F')), axis=1
             )
 
-        # حساب المستحقات
-        def calc_agent_dues(row):
-            agent_type = str(row.get('نوع المندوب', 'كفالة')).strip()
+        # حساب المستحقات المخصصة
+        def calc_agent_dues_final(row):
             orders = row['الطلبات المحققة']
-            if agent_type == 'فري لانسر':
-                salary = calc_freelancer_salary(orders, selected_client)
-                return pd.Series([salary, 0, salary])
-            else:
-                salary = calc_kafala_salary(orders)
-                car_rent = calc_car_rent(row.get('يمتلك سيارة', 'لا'), row.get('موديل السيارة', 2000))
-                fuel = row['مخصص البنزين']
-                return pd.Series([salary, car_rent, salary + car_rent + fuel])
+            agent_type = row.get('نوع المندوب', 'كفالة')
+            salary = calc_salary_by_project(orders, selected_client, agent_type)
+            car_rent = calc_car_rent(row.get('يمتلك سيارة', 'لا'), row.get('موديل السيارة', 2000))
+            fuel = row['مخصص البنزين']
+            return pd.Series([salary, car_rent, salary + car_rent + fuel])
 
-        df_merged[['راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues, axis=1)
+        df_merged[['راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_agent_dues_final, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب']
 
         df_merged.rename(columns={'Iqama': 'رقم الإقامة'}, inplace=True)
@@ -423,7 +447,7 @@ if perf_file and agent_info_file and car_fuel_file:
         st.markdown("### 📋 البيان التفصيلي المطور لمستحقات المناديب والأرباح")
         
         display_cols = [
-            'ID', 'Username', 'رقم الإقامة', 'اسم المندوب', 'حالة الحضور والتأخير', 
+            'ID', 'Username', 'رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'حالة الحضور والتأخير', 
             'إجمالي ساعات العمل', 'الطلبات المحققة', 'كمية البنزين (لتر)', 'مخصص البنزين', 
             'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'
         ]
