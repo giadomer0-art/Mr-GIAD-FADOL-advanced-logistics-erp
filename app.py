@@ -56,7 +56,7 @@ with st.sidebar:
     st.markdown("## ⚙️ إدارة المشاريع")
     selected_client = st.radio("اختر العميل المراد حسابه:", ["Supermall", "Ninja (نينجا)", "Kita (كيتا)", "HungerStation (هنقرستيشن)"], index=0)
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v18.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v19.0")
 
 # ----------------- 5. دوال الإيرادات للشركة -----------------
 def calc_supermall_revenue(orders):
@@ -92,24 +92,44 @@ def calc_hungerstation_revenue(orders, driver_status, extra_distance, quality_le
     extra_dist_val = extra_distance if pd.notna(extra_distance) else 0
     return (orders * base_fee) + (extra_dist_val * km_rate) + (orders * bonus_per_order)
 
-# ----------------- 6. دوال الرواتب الأصلية للمناديب (تم استرجاعها) -----------------
-def calc_kafala_salary(orders):
-    if orders >= 550: return 2500 + 300 + ((orders - 550) * 8)
-    elif 401 <= orders <= 549: return orders * 4
-    else: return orders * 3
+# ----------------- 6. دوال الرواتب الدقيقة والمخصصة لكل مشروع -----------------
+def calc_salary_by_project(orders, client, agent_type='كفالة'):
+    agent_type_str = str(agent_type).strip() if pd.notna(agent_type) else 'كفالة'
+    is_freelance = ('فري' in agent_type_str) or ('Freelance' in agent_type_str) or ('حر' in agent_type_str)
+    
+    if client == "Supermall":
+        if is_freelance:
+            # الفري لانسر لسوبرمول
+            return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7.0)
+        else:
+            # الكفالة لسوبرمول
+            if orders >= 550:
+                return 2500 + 300 + ((orders - 550) * 8)
+            elif 401 <= orders <= 549:
+                return orders * 4.0
+            else:
+                return orders * 3.0
+                
+    elif client == "Ninja (نينجا)":
+        # نينجا (الفري لانسر والكفالة)
+        return (5000 + ((orders - 460) * 8)) if orders >= 460 else (orders * 7.0)
 
-def calc_freelancer_salary(orders, client):
-    if client == "Ninja (نينجا)":
-        return (5000 + ((orders - 460) * 8)) if orders >= 460 else (orders * 7)
-    else:
-        # قاعدة الفري لانسر لسوبرمول وباقي المشاريع
-        return (5000 + ((orders - 550) * 9)) if orders >= 550 else (orders * 7)
+    elif client in ["Kita (كيتا)", "HungerStation (هنقرستيشن)"]:
+        # كيتا وهنقرستيشن (لا يوجد فري لانسر، ونفس حسبة كفالة سوبرمول)
+        if orders >= 550:
+            return 2500 + 300 + ((orders - 550) * 8)
+        elif 401 <= orders <= 549:
+            return orders * 4.0
+        else:
+            return orders * 3.0
+
+    return orders * 3.0
 
 def calc_car_rent(owns_car, model_year):
     if str(owns_car).strip() == 'نعم': return 1200 if pd.notna(model_year) and int(model_year) >= 2015 else 1000
     return 0
 
-# ----------------- 7. محرك المطابقة المطور (لحل مشكلة البنزين الموحد) -----------------
+# ----------------- 7. محرك المطابقة المطور -----------------
 def normalize_name(text):
     if pd.isna(text): return ""
     text = str(text).lower().strip()
@@ -124,11 +144,9 @@ def matches_driver_name(name_agent, name_fuel, aliases=[]):
     n_fu = normalize_name(name_fuel)
     if not n_ag or not n_fu: return False
     
-    # التأكد من أن الاسم طويل بما يكفي وموجود بالكامل لمنع التداخل العشوائي
     if len(n_ag) > 2 and n_ag in n_fu: return True
     if len(n_fu) > 2 and n_fu in n_ag: return True
     
-    # مطابقة المرادفات بحذر
     for alias in aliases:
         a_norm = normalize_name(alias)
         if a_norm and len(a_norm) > 2:
@@ -169,7 +187,7 @@ if perf_file and agent_info_file and car_fuel_file:
         df_merged = pd.merge(df_perf, df_agents, on='Iqama', how='left', suffixes=('', '_agents'))
         df_merged['نوع المندوب'] = df_merged.get('نوع المندوب', pd.Series()).fillna('كفالة')
 
-        # معالجة البنزين بدقة بعد تصحيح محرك التطابق
+        # معالجة البنزين بدقة
         driver_col_fuel = 'السائقين المعينين للمركبة' if 'السائقين المعينين للمركبة' in df_cars.columns else ('اسم السائق' if 'اسم السائق' in df_cars.columns else None)
         cost_col_fuel = 'إجمالي المبلغ المستخدم' if 'إجمالي المبلغ المستخدم' in df_cars.columns else ('القيمة' if 'القيمة' in df_cars.columns else None)
         liters_col_fuel = 'عدد اللترات' if 'عدد اللترات' in df_cars.columns else ('اللترات' if 'اللترات' in df_cars.columns else None)
@@ -221,17 +239,11 @@ if perf_file and agent_info_file and car_fuel_file:
         elif selected_client == "Kita (كيتا)": df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_kita_revenue(r['الطلبات المحققة'], r.get('Distance', 0)), axis=1)
         elif selected_client == "HungerStation (هنقرستيشن)": df_merged['إيراد الشركة من العميل'] = df_merged.apply(lambda r: calc_hungerstation_revenue(r['الطلبات المحققة'], r.get('Driver Status', 'أساسي'), r.get('Distance', 0), r.get('Quality Level', 'F')), axis=1)
 
-        # تطبيق دوال الرواتب الأصلية الصحيحة
+        # تطبيق دالة الرواتب الشاملة
         def calc_agent_dues_final(row):
             orders = row['الطلبات المحققة']
-            agent_type = str(row.get('نوع المندوب', 'كفالة')).strip()
-            is_freelance = ('فري' in agent_type) or ('Freelance' in agent_type) or ('حر' in agent_type)
-            
-            if is_freelance:
-                salary = calc_freelancer_salary(orders, selected_client)
-            else:
-                salary = calc_kafala_salary(orders)
-                
+            agent_type = row.get('نوع المندوب', 'كفالة')
+            salary = calc_salary_by_project(orders, selected_client, agent_type)
             car_rent = calc_car_rent(row.get('يمتلك سيارة', 'لا'), row.get('موديل السيارة', 2000))
             fuel = row['مخصص البنزين']
             return pd.Series([salary, car_rent, salary + car_rent + fuel])
@@ -246,7 +258,7 @@ if perf_file and agent_info_file and car_fuel_file:
             <div class="info-summary-box">
                 <h4>📌 معلومات التقرير والتشغيل العامة</h4>
                 <p>📍 <b>المدينة:</b> المدينة المنورة (MEDMS01)</p>
-                <p>⚠️ <b>ملاحظة:</b> تم إصلاح نظام البنزين ليستخرج التكلفة لكل سائق بدقة، وتم استرجاع نظام الرواتب الأصلي المعياري لشريحتي الفري لانسر والكفالة.</p>
+                <p>⚠️ <b>ملاحظة:</b> تم اعتماد شرائح الرواتب الدقيقة لجميع المشاريع (سوبرمول، نينجا، كيتا، وهنقرستيشن) بنجاح.</p>
             </div>
         """, unsafe_allow_html=True)
 
