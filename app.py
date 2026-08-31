@@ -10,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. قاعدة بيانات المناديب الثابتة للنظام (قابل للتحديث مستقبلاً) ---
+# --- 2. قاعدة بيانات المناديب الثابتة للنظام ---
 MASTER_DRIVERS_DATA = [
     {"ID": "96134", "Username": "elsiddiq-4466", "Iqama": "2550694711", "اسم المندوب": "الصديق الامين عباس قدوره"},
     {"ID": "96124", "Username": "ahmed-0071", "Iqama": "2497147245", "اسم المندوب": "احمد عبدالحميد ابراهيم سليمان"},
@@ -19,7 +19,6 @@ MASTER_DRIVERS_DATA = [
     {"ID": "96117", "Username": "nahid-2691", "Iqama": "2572574180", "اسم المندوب": "نهاد مولا"}
 ]
 df_master_db = pd.DataFrame(MASTER_DRIVERS_DATA)
-# تحويل المعرفات لنصوص لتجنب مشاكل الربط
 for col in ['ID', 'Username', 'Iqama']:
     df_master_db[col] = df_master_db[col].astype(str).str.strip()
 
@@ -126,7 +125,7 @@ with st.sidebar:
         index=0
     )
     st.divider()
-    st.caption("نظام الحسابات اللوجستية الموحد v4.0")
+    st.caption("نظام الحسابات اللوجستية الموحد v4.1")
 
 # ----------------- 6. دوال الإيرادات -----------------
 def calc_supermall_revenue(orders):
@@ -181,15 +180,28 @@ def calc_car_rent(owns_car, model_year):
         return 1200 if pd.notna(model_year) and int(model_year) >= 2015 else 1000
     return 0
 
-# ----------------- 8. دالة التعرف الذكي على المندوب -----------------
-def enrich_with_master_db(df):
-    # توحيد نوع البيانات في الشيت المرفوع للربط
-    for col in df.columns:
-        df[col] = df[col].astype(str).str.strip()
+# ----------------- 8. دالة تنظيف ومطابقة البيانات الذكية -----------------
+def clean_and_normalize_df(df):
+    # إزالة الأعمدة المكررة إن وجدت في نفس الملف
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+    
+    # توحيد مسمى عمود الإقامة
+    for col in list(df.columns):
+        if col.strip().lower() in ['iqama', 'رقم الاقامة', 'الاقامة', 'رقم الإقامة']:
+            df.rename(columns={col: 'رقم الإقامة'}, inplace=True)
+            
+    if 'رقم الإقامة' in df.columns:
+        # إزالة التكرار في العمود نفسه إن وجد مرتين
+        df = df.loc[:, ~df.columns.duplicated()]
+        df['رقم الإقامة'] = df['رقم الإقامة'].astype(str).str.strip().str.replace('.0', '', regex=False)
+    
+    return df
 
-    # محاولة الربط بواسطة (الإقامة أولاً، ثم الرقم الوظيفي، ثم اسم المستخدم)
+def enrich_with_master_db(df):
+    df = clean_and_normalize_df(df)
+
     match_col = None
-    for c in ['Iqama', 'رقم الإقامة', 'رقم الاقامة']:
+    for c in ['رقم الإقامة', 'Iqama']:
         if c in df.columns:
             match_col = (c, 'Iqama')
             break
@@ -205,11 +217,17 @@ def enrich_with_master_db(df):
                 break
                 
     if match_col:
+        df[match_col[0]] = df[match_col[0]].astype(str).str.strip()
         df = pd.merge(df, df_master_db, left_on=match_col[0], right_on=match_col[1], how='left', suffixes=('', '_db'))
+        df = clean_and_normalize_df(df)
         if 'اسم المندوب_db' in df.columns:
-            df['اسم المندوب'] = df['اسم المندوب_db'].combine_first(df.get('اسم المندوب', pd.Series()))
+            if 'اسم المندوب' in df.columns:
+                df['اسم المندوب'] = df['اسم المندوب_db'].combine_first(df['اسم المندوب'])
+            else:
+                df['اسم المندوب'] = df['اسم المندوب_db']
             df.drop(columns=['اسم المندوب_db'], inplace=True, errors='ignore')
-    return df
+            
+    return clean_and_normalize_df(df)
 
 # ----------------- 9. منطقة رفع الملفات -----------------
 st.markdown(f"### 📂 مركز رفع بيانات مشروع: `{selected_client}`")
@@ -232,24 +250,27 @@ if perf_file and agent_info_file and car_fuel_file:
         df_agents = pd.read_excel(agent_info_file)
         df_cars = pd.read_excel(car_fuel_file)
         
-        # إثراء تقرير الإنتاجية بقاعدة البيانات الداخلية الذكية
+        # تنظيف وإثراء البيانات
         df_perf = enrich_with_master_db(df_perf)
         df_agents = enrich_with_master_db(df_agents)
         df_cars = enrich_with_master_db(df_cars)
-
-        # توحيد عمود الإقامة للدمج
-        for df in [df_perf, df_agents, df_cars]:
-            if 'Iqama' in df.columns: df.rename(columns={'Iqama': 'رقم الإقامة'}, inplace=True)
-            elif 'رقم الاقامة' in df.columns: df.rename(columns={'رقم الاقامة': 'رقم الإقامة'}, inplace=True)
-                
+        
+        # دمج البيانات بأمان بدون تكرار أعمدة الإقامة
         df_merged = pd.merge(df_perf, df_agents, on='رقم الإقامة', how='left', suffixes=('', '_agent'))
+        df_merged = clean_and_normalize_df(df_merged)
+        
         df_merged = pd.merge(df_merged, df_cars, on='رقم الإقامة', how='left', suffixes=('', '_car'))
+        df_merged = clean_and_normalize_df(df_merged)
         
         if 'اسم المندوب_agent' in df_merged.columns:
             df_merged['اسم المندوب'] = df_merged['اسم المندوب'].combine_first(df_merged['اسم المندوب_agent'])
+            df_merged.drop(columns=['اسم المندوب_agent'], inplace=True, errors='ignore')
 
         orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
-        df_merged['الطلبات الناجحة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
+        if orders_col in df_merged.columns:
+            df_merged['الطلبات الناجحة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
+        else:
+            df_merged['الطلبات الناجحة'] = 0
         
         if 'أيام العمل' not in df_merged.columns: df_merged['أيام العمل'] = 30
         else: df_merged['أيام العمل'] = pd.to_numeric(df_merged['أيام العمل'], errors='coerce').fillna(30)
@@ -349,7 +370,10 @@ if perf_file and agent_info_file and car_fuel_file:
             
         display_cols.extend(['راتب الإنتاجية', 'بدل السيارة', 'مخصص البنزين', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي'])
         
-        final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
+        # تصفية الأعمدة ومنع أي تكرار مجدداً
+        final_df = df_merged.loc[:, ~df_merged.columns.duplicated()]
+        final_df = final_df[[c for c in display_cols if c in final_df.columns]]
+        
         st.dataframe(final_df, use_container_width=True)
 
         # --- 13. زر التصدير ---
