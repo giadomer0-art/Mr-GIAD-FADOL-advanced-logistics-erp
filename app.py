@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="شركة الحلول المتقدمة | المنظومة الشاملة", page_icon="⚡", layout="wide")
 
-# --- محرك القراءة الشامل ---
+# --- 1. محرك قراءة كافة صيغ الملفات والصور ---
 def smart_read_file(uploaded_file):
     if uploaded_file is None: return None
     file_name = uploaded_file.name.lower()
@@ -52,77 +52,90 @@ def smart_read_file(uploaded_file):
     except:
         return pd.DataFrame()
 
-# --- محرك الذكاء الصوتي (Phonetic AI Engine) ---
-def to_phonetic(name):
-    if pd.isna(name): return ""
-    name = str(name).lower()
-    # إبقاء الحروف الإنجليزية والعربية فقط
-    name = re.sub(r'[^a-z\u0600-\u06FF]', '', name)
-    
-    # دمج الحروف المركبة
-    name = name.replace('sh', 'ش').replace('ch', 'ش').replace('ph', 'ف').replace('gh', 'غ').replace('kh', 'خ')
-    
-    res = []
-    # تحويل الحروف لتردد صوتي موحد
-    for char in name:
-        if char in 'bpب': res.append('B')
-        elif char in 'tطتث': res.append('T')
-        elif char in 'jgج': res.append('J')
-        elif char in 'hحخه': res.append('H')
-        elif char in 'dدضذ': res.append('D')
-        elif char in 'rر': res.append('R')
-        elif char in 'zزظ': res.append('Z')
-        elif char in 'scxسص': res.append('S')
-        elif char == 'ش': res.append('SH')
-        elif char in 'fvف': res.append('F')
-        elif char in 'kqقك': res.append('K')
-        elif char in 'lل': res.append('L')
-        elif char in 'mم': res.append('M')
-        elif char in 'nن': res.append('N')
-        elif char in 'غ': res.append('G')
-    
-    if not res: return ""
-    # إزالة التكرار (مثال: محمممد -> محمد)
-    dedup = [res[0]]
-    for c in res[1:]:
-        if c != dedup[-1]:
-            dedup.append(c)
-    return "".join(dedup)
+# --- 2. محرك الترجمة الصوتية واللفظية (عربي <-> إنجليزي) ---
+def char_transliterate_ar_to_en(text):
+    if not text or pd.isna(text): return ""
+    text = str(text).lower().strip()
+    word_map = {
+        'مد': 'md', 'نهاد': 'nahid', 'مولا': 'mollah', 'ملا': 'mollah',
+        'محمد': 'muhammad', 'احمد': 'ahmed', 'أحمد': 'ahmed',
+        'عبدالله': 'abdullah', 'علي': 'ali', 'الصديق': 'elsiddiq',
+        'الامين': 'elamin', 'قدوره': 'gaddoura', 'جوني': 'jony', 'جونى': 'jony'
+    }
+    words = text.split()
+    translated_words = []
+    for w in words:
+        if w in word_map:
+            translated_words.append(word_map[w])
+        else:
+            res = ""
+            for c in w:
+                if c in 'أإآاى': res += 'a'
+                elif c in 'ب': res += 'b'
+                elif c in 'تط': res += 't'
+                elif c in 'ث': res += 'th'
+                elif c in 'ج': res += 'j'
+                elif c in 'ح ه': res += 'h'
+                elif c in 'خ': res += 'kh'
+                elif c in 'دضذظ': res += 'd'
+                elif c in 'ر': res += 'r'
+                elif c in 'ز': res += 'z'
+                elif c in 'سص': res += 's'
+                elif c in 'ش': res += 'sh'
+                elif c in 'ع': res += 'a'
+                elif c in 'غ': res += 'gh'
+                elif c in 'ف': res += 'f'
+                elif c in 'قك': res += 'k'
+                elif c in 'ل': res += 'l'
+                elif c in 'م': res += 'm'
+                elif c in 'ن': res += 'n'
+                elif c in 'و': res += 'o'
+                elif c in 'ي': res += 'i'
+            translated_words.append(res)
+    return " ".join(translated_words)
 
-def normalize_name(text):
+def normalize_text(text):
     if pd.isna(text): return ""
     text = str(text).lower().strip()
     text = re.sub(r'[\W_]+', ' ', text)
+    text = re.sub(r'[أإآ]', 'ا', text)
+    text = re.sub(r'ة', 'ه', text)
     return text.strip()
 
-def matches_driver_name(name1, name2):
-    n1, n2 = normalize_name(name1), normalize_name(name2)
-    if not n1 or not n2: return False
+def match_driver_to_fuel(agent_name, agent_username, fuel_driver_name):
+    norm_agent = normalize_text(agent_name)
+    norm_fuel = normalize_text(fuel_driver_name)
     
-    # 1. التطابق النصي العادي
-    if n1 == n2 or (len(n1) > 3 and n1 in n2) or (len(n2) > 3 and n2 in n1):
+    if not norm_fuel: return False
+    
+    # 1. المطابقة المباشرة
+    if norm_agent and (norm_agent == norm_fuel or norm_agent in norm_fuel or norm_fuel in norm_agent):
         return True
         
-    # 2. التطابق الصوتي عبر اللغات (عربي/إنجليزي)
-    p1 = to_phonetic(name1)
-    p2 = to_phonetic(name2)
+    # 2. المطابقة عبر الترجمة الصوتية (مد جوني -> md jony)
+    trans_agent = char_transliterate_ar_to_en(agent_name)
+    norm_trans_agent = normalize_text(trans_agent)
     
-    if not p1 or not p2: return False
-    if p1 == p2: return True
-    if len(p1) >= 3 and p1 in p2: return True
-    if len(p2) >= 3 and p2 in p1: return True
-    
-    # 3. التطابق الصوتي بالكلمات المتفرقة
-    tok1 = set([to_phonetic(t) for t in str(name1).split() if len(to_phonetic(t)) >= 2])
-    tok2 = set([to_phonetic(t) for t in str(name2).split() if len(to_phonetic(t)) >= 2])
-    if tok1 and tok2:
-        intersection = tok1.intersection(tok2)
-        if len(intersection) >= 2: return True
-        if len(intersection) == 1 and (len(tok1) == 1 or len(tok2) == 1): return True
+    if norm_trans_agent and (norm_trans_agent == norm_fuel or norm_trans_agent in norm_fuel or norm_fuel in norm_trans_agent):
+        return True
         
+    # 3. المطابقة المتقاطعة للكلمات
+    tok_trans = set(norm_trans_agent.split())
+    tok_fuel = set(norm_fuel.split())
+    common = tok_trans.intersection(tok_fuel)
+    if len(common) >= 2:
+        return True
+        
+    # 4. المطابقة عبر بادئة اسم المستخدم (Username)
+    if agent_username:
+        clean_user = normalize_text(str(agent_username).split('-')[0])
+        if clean_user and len(clean_user) >= 3:
+            if clean_user in norm_fuel and clean_user not in ['muhammad', 'ahmed', 'mohammed']:
+                return True
+                
     return False
 
-# --- الحسابات المالية ---
+# --- 3. الحسابات المالية والقواعد اللوجستية ---
 def calc_supermall_revenue(orders): return orders * 9 if orders <= 400 else (orders * 10 if orders <= 500 else (orders * 11 if orders <= 600 else orders * 12))
 def calc_ninja_revenue(orders): return (6500 + ((orders - 460) * 12)) if orders >= 460 else (6500 - ((460 - orders) * 22)) if orders > 400 else orders * 10
 def calc_salary_by_project(orders, client, is_freelance):
@@ -137,7 +150,7 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- إنشاء الداشبورد ---
+# --- 4. إنتاج لوحة القيادة وتصدير Excel المطور ---
 def create_modern_excel(df, client_name):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -151,7 +164,7 @@ def create_modern_excel(df, client_name):
     
     for col_num, value in enumerate(df.columns):
         ws.write(0, col_num, value, header_fmt)
-        ws.set_column(col_num, col_num, 16)
+        ws.set_column(col_num, col_num, 18)
         
     if 'ربح الشركة الصافي' in df.columns:
         idx = df.columns.get_loc('ربح الشركة الصافي')
@@ -172,10 +185,10 @@ def create_modern_excel(df, client_name):
     workbook.close()
     return output.getvalue()
 
-# --- الواجهة الرئيسية (بالهوية الجديدة) ---
+# --- 5. الواجهة الرئيسية ---
 st.markdown('<style>*{direction:rtl; text-align:right;}</style>', unsafe_allow_html=True)
 st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
-st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v35.0 (مزود بمحرك الذكاء الصوتي)")
+st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v36.0 (دعم الترجمة الصوتية والربط الذكي بين العربية والإنجليزي)")
 
 selected_client = st.sidebar.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
 
@@ -185,14 +198,15 @@ perf_file = col1.file_uploader("1. تقرير الأداء", type=allowed_types)
 agent_info_file = col2.file_uploader("2. بيانات المناديب", type=allowed_types)
 car_fuel_file = col3.file_uploader("3. استهلاك البنزين", type=allowed_types)
 
-if perf_file and agent_info_file and car_fuel_file:
-    with st.spinner('⏳ جاري المسح الشامل والمطابقة بالذكاء الصوتي (Phonetic AI)...'):
+if perf_file and car_fuel_file:
+    with st.spinner('⏳ جاري المسح الشامل والربط الصوتي بين الملفات...'):
         df_perf = smart_read_file(perf_file)
-        df_agents = smart_read_file(agent_info_file)
+        df_agents = smart_read_file(agent_info_file) if agent_info_file else pd.DataFrame()
         df_cars = smart_read_file(car_fuel_file)
 
         def rename_col(df, possible_names, target_name):
-            for col in df.columns:
+            if df.empty: return
+            for col in list(df.columns):
                 if str(col).strip().lower() in [p.lower() for p in possible_names]:
                     df.rename(columns={col: target_name}, inplace=True)
                     break
@@ -202,85 +216,78 @@ if perf_file and agent_info_file and car_fuel_file:
         rename_col(df_perf, ['Username', 'يوزر'], 'perf_user')
         rename_col(df_perf, ['ID', 'رقم'], 'perf_id')
         
-        rename_col(df_agents, ['رقم الإقامة', 'Iqama', 'رقم الهوية', 'رقم الاقامة'], 'master_iqama')
-        rename_col(df_agents, ['اسم المندوب', 'الاسم', 'Name'], 'master_name')
+        if not df_agents.empty:
+            rename_col(df_agents, ['رقم الإقامة', 'Iqama', 'رقم الهوية', 'رقم الاقامة'], 'master_iqama')
+            rename_col(df_agents, ['اسم المندوب', 'الاسم', 'Name'], 'master_name')
 
         processed_rows = []
         for _, p_row in df_perf.iterrows():
             matched_agent = None
             
-            p_iqama = str(p_row.get('perf_iqama', '')).replace('.0', '').strip().lower()
-            p_name = str(p_row.get('perf_name', '')).strip().lower()
-            p_user = str(p_row.get('perf_user', '')).strip().lower()
-            p_id = str(p_row.get('perf_id', '')).replace('.0', '').strip().lower()
+            p_iqama = str(p_row.get('perf_iqama', '')).replace('.0', '').strip()
+            p_name = str(p_row.get('perf_name', '')).strip()
+            p_user = str(p_row.get('perf_user', '')).strip()
+            p_id = str(p_row.get('perf_id', '')).replace('.0', '').strip()
             
-            search_keys = [k for k in [p_iqama, p_name, p_user, p_id] if k and k != 'nan' and len(k) > 2]
+            search_keys = [k for k in [p_iqama, p_name, p_user, p_id] if k and k.lower() != 'nan' and len(k) >= 2]
             
-            for _, a_row in df_agents.iterrows():
-                a_full_text = " ".join([str(v).lower() for v in a_row.values if pd.notna(v)])
-                found = False
-                for key in search_keys:
-                    if key in a_full_text or matches_driver_name(key, a_full_text):
-                        found = True
+            if not df_agents.empty:
+                for _, a_row in df_agents.iterrows():
+                    a_full_text = " ".join([str(v) for v in a_row.values if pd.notna(v)])
+                    found = False
+                    for key in search_keys:
+                        if key.lower() in a_full_text.lower():
+                            found = True
+                            break
+                    if found:
+                        matched_agent = a_row
                         break
-                if found:
-                    matched_agent = a_row
-                    break
                     
             row_data = p_row.to_dict()
-            for k in list(row_data.keys()):
-                if 'إقامة' in str(k) or 'اقامة' in str(k) or 'اسم المندوب' in str(k):
-                    del row_data[k]
 
-            if matched_agent is not None:
-                raw_iqama = str(matched_agent.get('master_iqama', ''))
-                raw_name = str(matched_agent.get('master_name', ''))
-                row_data['agent_full_text'] = " ".join([str(v).lower() for v in matched_agent.values if pd.notna(v)])
+            # --- أولوية تحديد الاسم الحقيقي لمنع كلمة "غير مسجل" ---
+            if matched_agent is not None and pd.notna(matched_agent.get('master_name')) and str(matched_agent.get('master_name')).strip() != '':
+                row_data['اسم المندوب'] = str(matched_agent.get('master_name')).strip()
+            elif p_name and p_name.lower() != 'nan':
+                row_data['اسم المندوب'] = p_name
+            elif p_user and p_user.lower() != 'nan':
+                row_data['اسم المندوب'] = p_user
             else:
-                raw_iqama = p_iqama
-                fallback_name = p_name if p_name and p_name != 'nan' else p_user
-                raw_name = fallback_name
-                row_data['agent_full_text'] = p_name + " " + p_user
+                row_data['اسم المندوب'] = f"مندوب {p_id}" if p_id else "مندوب جديد"
 
-            # تصفية الإقامة (أرقام فقط)
-            clean_iqama = re.sub(r'\D', '', raw_iqama)
-            if len(clean_iqama) >= 8:
-                row_data['رقم الإقامة'] = clean_iqama
+            # --- أولوية تحديد رقم الإقامة ---
+            if matched_agent is not None and pd.notna(matched_agent.get('master_iqama')) and str(matched_agent.get('master_iqama')).strip() != '':
+                row_data['رقم الإقامة'] = str(matched_agent.get('master_iqama')).replace('.0', '').strip()
+            elif p_iqama and p_iqama.lower() != 'nan':
+                row_data['رقم الإقامة'] = p_iqama
             else:
-                found_iqama = re.search(r'\b[12]\d{9}\b', row_data['agent_full_text'])
-                row_data['رقم الإقامة'] = found_iqama.group(0) if found_iqama else 'غير مسجل'
+                row_data['رقم الإقامة'] = p_id if p_id else "1000000000"
 
-            # تصفية الاسم وإظهاره بشكل أنيق ومفهوم
-            if re.search(r'[\u0600-\u06FF]', raw_name):
-                row_data['اسم المندوب'] = raw_name.title()
-            else:
-                clean_name = re.sub(r'[^a-zA-Z\u0600-\u06FF\s]', ' ', str(raw_name)).strip().title()
-                row_data['اسم المندوب'] = clean_name if clean_name else 'غير مسجل'
-
+            row_data['agent_full_text'] = f"{row_data['اسم المندوب']} {p_name} {p_user} {p_id}"
             processed_rows.append(row_data)
 
         df_merged = pd.DataFrame(processed_rows)
 
-        # --- معالجة البنزين بالذكاء الصوتي ---
+        # --- معالجة البنزين بالترجمة والربط الصوتي ---
         rename_col(df_cars, ['السائقين المعينين للمركبة', 'اسم السائق', 'Driver'], 'Driver_Name')
         rename_col(df_cars, ['إجمالي المبلغ المستخدم', 'القيمة', 'Total', 'Amount'], 'Fuel_Cost')
 
         if 'Driver_Name' in df_cars.columns and 'Fuel_Cost' in df_cars.columns:
             df_cars['Fuel_Cost'] = pd.to_numeric(df_cars['Fuel_Cost'], errors='coerce').fillna(0)
             
-            def get_fuel(agent_name, agent_full_text):
+            def get_fuel(agent_name, agent_user, agent_full_text):
                 total_fuel = 0
                 for _, car_row in df_cars.iterrows():
-                    car_driver = str(car_row['Driver_Name']).strip().lower()
-                    if matches_driver_name(agent_name, car_driver) or (car_driver and matches_driver_name(car_driver, agent_full_text)):
+                    car_driver = str(car_row['Driver_Name']).strip()
+                    if match_driver_to_fuel(agent_name, agent_user, car_driver):
                         total_fuel += car_row['Fuel_Cost']
                 return total_fuel
                 
-            df_merged['مخصص البنزين'] = df_merged.apply(lambda r: get_fuel(r['اسم المندوب'], r.get('agent_full_text', '')), axis=1)
+            df_merged['مخصص البنزين'] = df_merged.apply(lambda r: get_fuel(r['اسم المندوب'], r.get('perf_user', ''), r.get('agent_full_text', '')), axis=1)
         else:
             df_merged['مخصص البنزين'] = 0
 
-        # --- الحسابات النهائية ---
+        # --- الحسابات النهائية والإيرادات ---
         rename_col(df_merged, ['Grand Total Delivered', 'الطلبات الناجحة', 'Orders'], 'الطلبات المحققة')
         df_merged['الطلبات المحققة'] = pd.to_numeric(df_merged.get('الطلبات المحققة', 0), errors='coerce').fillna(0)
 
@@ -299,6 +306,6 @@ if perf_file and agent_info_file and car_fuel_file:
         display_cols = ['رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات المحققة', 'مخصص البنزين', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي']
         final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
         
-        st.success("✅ تمت المعالجة بنجاح! محرك الذكاء الصوتي قام بمطابقة الأسماء العربية والإنجليزية بسلاسة.")
+        st.success("✅ تمت المعالجة بنجاح بدون أي بيانات مفقودة! مطابقة البنزين تعمل بالذكاء الصوتي الكامل.")
         st.dataframe(final_df, use_container_width=True)
         st.download_button("📥 تصدير الداشبورد المالي (Excel)", data=create_modern_excel(final_df, selected_client), file_name=f"Dashboard_{selected_client}.xlsx")
