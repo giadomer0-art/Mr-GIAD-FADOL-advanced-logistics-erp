@@ -4,3 +4,5 @@ openpyxl
 xlsxwriter
 pdfplumber
 python-docx
+pytesseract
+Pillow
