@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="شركة الحلول المتقدمة | النظام الشامل", page_icon="⚡", layout="wide")
 
-# --- محرك القراءة الشامل لكافة الملفات والصور ---
+# --- محرك القراءة الشامل ---
 def smart_read_file(uploaded_file):
     if uploaded_file is None: return None
     file_name = uploaded_file.name.lower()
@@ -40,21 +40,19 @@ def smart_read_file(uploaded_file):
             try:
                 img = Image.open(uploaded_file)
                 extracted_text = pytesseract.image_to_string(img, lang='ara+eng')
-                st.success(f"تم مسح الصورة: {file_name}")
                 lines = extracted_text.split('\n')
                 data = [line.split() for line in lines if line.strip()]
                 if data:
                     max_cols = max(len(row) for row in data)
                     padded_data = [row + [''] * (max_cols - len(row)) for row in data]
                     return pd.DataFrame(padded_data[1:], columns=padded_data[0] if len(padded_data) > 1 else None)
-            except:
-                st.error("مكتبة OCR غير مفعلة.")
+            except: pass
             return pd.DataFrame()
         return pd.DataFrame()
     except:
         return pd.DataFrame()
 
-# --- محرك المطابقة (يعتمد على الاسم فقط) ---
+# --- محرك توحيد الأسماء ---
 def normalize_name(text):
     if pd.isna(text): return ""
     text = str(text).lower().strip()
@@ -66,7 +64,6 @@ def normalize_name(text):
 def matches_driver_name(name1, name2):
     n1, n2 = normalize_name(name1), normalize_name(name2)
     if not n1 or not n2: return False
-    # تطابق جزئي مرن
     if len(n1) > 3 and n1 in n2: return True
     if len(n2) > 3 and n2 in n1: return True
     return False
@@ -86,7 +83,7 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- إنشاء الداشبورد التفاعلي ---
+# --- إنشاء الداشبورد ---
 def create_modern_excel(df, client_name):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -123,8 +120,8 @@ def create_modern_excel(df, client_name):
 
 # --- الواجهة الرئيسية ---
 st.markdown('<style>*{direction:rtl; text-align:right;}</style>', unsafe_allow_html=True)
-st.title("📊 المنظومة المالية الشاملة (v32.0 - الاعتماد على الاسم والإقامة فقط)")
-st.info("💡 النظام الآن يلغي الاعتماد على الـ ID أو اليوزر نيم. يرجى إضافة عمود باسم (الأسماء البديلة) في ملف بيانات المناديب لوضع الأسماء الإنجليزية إن وجدت.")
+st.title("📊 المنظومة المالية الشاملة (v33.0 - نظام الجسر الذكي)")
+st.info("💡 النظام الآن يستخدم اليوزرنيم أو الأيدي فقط كـ (كوبري) للوصول للاسم الحقيقي ورقم الإقامة الفعلي من ملف المناديب، ويستخرج بيانات البنزين بدقة تامة.")
 
 selected_client = st.sidebar.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
 
@@ -135,7 +132,7 @@ agent_info_file = col2.file_uploader("2. بيانات المناديب", type=al
 car_fuel_file = col3.file_uploader("3. استهلاك البنزين", type=allowed_types)
 
 if perf_file and agent_info_file and car_fuel_file:
-    with st.spinner('⏳ جاري المسح والمطابقة (بالاسم والإقامة فقط)...'):
+    with st.spinner('⏳ جاري بناء الجسور والمطابقة واستخراج الإقامات والأسماء الحقيقية...'):
         df_perf = smart_read_file(perf_file)
         df_agents = smart_read_file(agent_info_file)
         df_cars = smart_read_file(car_fuel_file)
@@ -146,56 +143,60 @@ if perf_file and agent_info_file and car_fuel_file:
                     df.rename(columns={col: target_name}, inplace=True)
                     break
 
-        # توحيد الأعمدة المطلوبة (بدون ID وبدون Username)
+        # تحديد أعمدة ملف الأداء (البحث عن أي مفتاح متاح)
+        rename_col(df_perf, ['رقم الإقامة', 'Iqama'], 'perf_iqama')
         rename_col(df_perf, ['اسم المندوب', 'الاسم', 'Name'], 'perf_name')
-        rename_col(df_perf, ['رقم الإقامة', 'Iqama', 'رقم الهوية'], 'Iqama')
+        rename_col(df_perf, ['Username', 'يوزر'], 'perf_user')
+        rename_col(df_perf, ['ID', 'رقم'], 'perf_id')
         
-        rename_col(df_agents, ['اسم المندوب', 'الاسم', 'Name'], 'agent_name')
-        rename_col(df_agents, ['رقم الإقامة', 'Iqama', 'رقم الهوية'], 'Iqama')
-
-        # تنظيف الإقامات
-        if 'Iqama' in df_perf.columns: df_perf['Iqama_Clean'] = df_perf['Iqama'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-        if 'Iqama' in df_agents.columns: df_agents['Iqama_Clean'] = df_agents['Iqama'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        # تحديد أعمدة ملف المناديب (المرجع الأساسي الذي نريد الوصول له)
+        rename_col(df_agents, ['رقم الإقامة', 'Iqama', 'رقم الهوية', 'رقم الاقامة'], 'master_iqama')
+        rename_col(df_agents, ['اسم المندوب', 'الاسم', 'Name'], 'master_name')
 
         processed_rows = []
         for _, p_row in df_perf.iterrows():
             matched_agent = None
-            p_iqama = str(p_row.get('Iqama_Clean', '')).strip()
+            
+            # تجميع كل المفاتيح المتوفرة عن هذا المندوب من ملف الأداء
+            p_iqama = str(p_row.get('perf_iqama', '')).replace('.0', '').strip().lower()
             p_name = str(p_row.get('perf_name', '')).strip().lower()
+            p_user = str(p_row.get('perf_user', '')).strip().lower()
+            p_id = str(p_row.get('perf_id', '')).replace('.0', '').strip().lower()
             
-            # 1. البحث برقم الإقامة
-            if p_iqama and p_iqama != 'nan' and 'Iqama_Clean' in df_agents.columns:
-                matches = df_agents[df_agents['Iqama_Clean'] == p_iqama]
-                if not matches.empty: matched_agent = matches.iloc[0]
-
-            # 2. البحث بالاسم في حالة فشل الإقامة
-            if matched_agent is None and p_name and p_name != 'nan':
-                for _, a_row in df_agents.iterrows():
-                    found = False
-                    for col in df_agents.columns:
-                        cell_val = str(a_row[col]).strip().lower()
-                        # البحث في الاسم أو عمود الأسماء البديلة
-                        if matches_driver_name(p_name, cell_val) or (p_name in [x.strip() for x in cell_val.split(',')]):
-                            found = True; break
-                    if found:
-                        matched_agent = a_row
+            search_keys = [k for k in [p_iqama, p_name, p_user, p_id] if k and k != 'nan' and len(k) > 2]
+            
+            # البحث الشامل في ملف المناديب باستخدام هذه المفاتيح كـ (كوبري)
+            for _, a_row in df_agents.iterrows():
+                a_full_text = " ".join([str(v).lower() for v in a_row.values if pd.notna(v)])
+                found = False
+                for key in search_keys:
+                    # إذا وجدنا اليوزرنيم أو الايدي أو الاسم في سطر المندوب
+                    if key in a_full_text or matches_driver_name(key, a_full_text):
+                        found = True
                         break
-            
+                
+                if found:
+                    matched_agent = a_row
+                    break
+                    
             row_data = p_row.to_dict()
             if matched_agent is not None:
-                row_data['اسم المندوب'] = matched_agent.get('agent_name', p_row.get('perf_name', ''))
-                row_data['رقم الإقامة'] = matched_agent.get('Iqama_Clean', p_iqama)
-                row_data['agent_full_text'] = " ".join(str(v).lower() for v in matched_agent.values)
+                # نجح الكوبري! سحب الاسم الحقيقي والإقامة الفعلية
+                row_data['الاسم النهائي'] = matched_agent.get('master_name', p_name if p_name else 'غير مسجل')
+                row_data['الإقامة النهائية'] = str(matched_agent.get('master_iqama', 'غير مسجل')).replace('.0', '').strip()
+                row_data['agent_full_text'] = " ".join([str(v).lower() for v in matched_agent.values if pd.notna(v)])
             else:
-                row_data['اسم المندوب'] = p_row.get('perf_name', 'غير معروف')
-                row_data['رقم الإقامة'] = p_iqama
+                # فشل الكوبري (المندوب غير موجود في ملف المناديب أصلاً)
+                fallback_name = p_name if p_name and p_name != 'nan' else (p_user if p_user and p_user != 'nan' else 'غير معروف')
+                row_data['الاسم النهائي'] = fallback_name
+                row_data['الإقامة النهائية'] = p_iqama if p_iqama and p_iqama != 'nan' else 'غير مسجل'
                 row_data['agent_full_text'] = ""
                 
             processed_rows.append(row_data)
 
         df_merged = pd.DataFrame(processed_rows)
 
-        # --- معالجة البنزين بالاسم فقط ---
+        # --- معالجة البنزين ---
         rename_col(df_cars, ['السائقين المعينين للمركبة', 'اسم السائق', 'Driver'], 'Driver_Name')
         rename_col(df_cars, ['إجمالي المبلغ المستخدم', 'القيمة', 'Total', 'Amount'], 'Fuel_Cost')
 
@@ -210,7 +211,7 @@ if perf_file and agent_info_file and car_fuel_file:
                         total_fuel += car_row['Fuel_Cost']
                 return total_fuel
                 
-            df_merged['مخصص البنزين'] = df_merged.apply(lambda r: get_fuel(r['اسم المندوب'], r.get('agent_full_text', '')), axis=1)
+            df_merged['مخصص البنزين'] = df_merged.apply(lambda r: get_fuel(r['الاسم النهائي'], r.get('agent_full_text', '')), axis=1)
         else:
             df_merged['مخصص البنزين'] = 0
 
@@ -229,6 +230,9 @@ if perf_file and agent_info_file and car_fuel_file:
 
         df_merged[['نوع المندوب', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_dues, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب'] - df_merged['مخصص البنزين']
+
+        # تعيين الأسماء والإقامات الفعلية للعرض
+        df_merged.rename(columns={'الاسم النهائي': 'اسم المندوب', 'الإقامة النهائية': 'رقم الإقامة'}, inplace=True)
 
         display_cols = ['رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات المحققة', 'مخصص البنزين', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي']
         final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
