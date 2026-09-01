@@ -4,13 +4,18 @@ from io import BytesIO
 import re
 import warnings
 
-# محاولة استدعاء مكتبات القراءة المتقدمة
+# محاولة استدعاء مكتبات القراءة المتقدمة والصور
 try:
     import pdfplumber
 except ImportError:
     pass
 try:
     import docx
+except ImportError:
+    pass
+try:
+    from PIL import Image
+    import pytesseract
 except ImportError:
     pass
 
@@ -24,7 +29,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. محرك قراءة الملفات الذكي (Multi-Format Parser) ---
+# --- 2. محرك قراءة الملفات الذكي (Multi-Format & OCR Parser) ---
 def smart_read_file(uploaded_file):
     if uploaded_file is None:
         return None
@@ -66,9 +71,35 @@ def smart_read_file(uploaded_file):
             except Exception as e:
                 st.error("يرجى التأكد من تثبيت مكتبة python-docx في requirements.txt")
                 return pd.DataFrame()
+        
+        # التحديث الجديد: قراءة الصور واستخراج الجداول عبر OCR
         elif file_name.endswith(('.png', '.jpg', '.jpeg')):
-            st.info(f"🖼️ قمت برفع صورة ({file_name}). قراءة الجداول المعقدة من الصور تتطلب ربط النظام بـ API الرؤية الذكية (Vision AI). يرجى رفع البيانات كـ Excel لضمان الدقة المالية بنسبة 100%.")
-            return pd.DataFrame()
+            try:
+                img = Image.open(uploaded_file)
+                # استخدام محرك tesseract لاستخراج النص (عربي + إنجليزي)
+                extracted_text = pytesseract.image_to_string(img, lang='ara+eng')
+                
+                st.success(f"👁️ تم مسح الصورة ({file_name}) وقراءة النصوص بنجاح!")
+                
+                # تحويل النص العشوائي إلى جدول بيانات تقريبي
+                lines = extracted_text.split('\n')
+                data = []
+                for line in lines:
+                    if line.strip():
+                        data.append(line.split())
+                
+                if data:
+                    max_cols = max(len(row) for row in data)
+                    padded_data = [row + [''] * (max_cols - len(row)) for row in data]
+                    # إنشاء جدول من النصوص المستخرجة
+                    return pd.DataFrame(padded_data[1:], columns=padded_data[0] if len(padded_data) > 1 else None)
+                else:
+                    st.warning("لم يتمكن النظام من قراءة نصوص واضحة من الصورة.")
+                    return pd.DataFrame()
+                    
+            except Exception as e:
+                st.error(f"لم يتم تفعيل محرك قراءة الصور OCR. يرجى إضافة 'pytesseract' و 'Pillow' إلى requirements.txt وإضافة 'tesseract-ocr' و 'tesseract-ocr-ara' إلى packages.txt. تفاصيل الخطأ: {e}")
+                return pd.DataFrame()
         else:
             st.error("صيغة الملف غير مدعومة.")
             return pd.DataFrame()
@@ -89,37 +120,28 @@ def norm_text(text):
 # --- 4. دالة إنشاء الإكسل العصري والمودرن (Beautiful Excel with Charts) ---
 def create_modern_excel(df, client_name):
     output = BytesIO()
-    # استخدام XlsxWriter كمحرك لصناعة الرسوم والتنسيقات العصرية
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
-    
-    # 1. إدراج ورقة البيانات التفصيلية
     df.to_excel(workbook, index=False, sheet_name='البيانات التفصيلية')
     
     workbook_obj = workbook.book
     worksheet_data = workbook.sheets['البيانات التفصيلية']
     
-    # التنسيقات العصرية (Modern Formats)
     header_format = workbook_obj.add_format({'bold': True, 'bg_color': '#1E293B', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
     money_format = workbook_obj.add_format({'num_format': '#,##0.00 "SAR"', 'align': 'center'})
     red_format = workbook_obj.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
     green_format = workbook_obj.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
     
-    # تنسيق رأس الجدول
     for col_num, value in enumerate(df.columns.values):
         worksheet_data.write(0, col_num, value, header_format)
-        worksheet_data.set_column(col_num, col_num, 18) # توسيع الأعمدة
+        worksheet_data.set_column(col_num, col_num, 18)
     
-    # التنسيق الشرطي (الأرباح بالأخضر والخسائر بالأحمر)
     if 'ربح الشركة الصافي' in df.columns:
         profit_col_idx = df.columns.get_loc('ربح الشركة الصافي')
         col_letter = chr(65 + profit_col_idx) if profit_col_idx < 26 else chr(64 + profit_col_idx // 26) + chr(65 + profit_col_idx % 26)
         worksheet_data.conditional_format(f'{col_letter}2:{col_letter}{len(df)+1}', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_format})
         worksheet_data.conditional_format(f'{col_letter}2:{col_letter}{len(df)+1}', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_format})
 
-    # 2. إدراج ورقة لوحة القيادة (Dashboard) مع الرسوم البيانية
     worksheet_dash = workbook_obj.add_worksheet('📊 لوحة القيادة (Dashboard)')
-    
-    # نصوص لوحة القيادة
     title_format = workbook_obj.add_format({'bold': True, 'font_size': 20, 'font_color': '#0F172A', 'align': 'center'})
     worksheet_dash.merge_range('B2:H3', f'التقرير المالي والتشغيلي لشركة الحلول المتقدمة - مشروع: {client_name}', title_format)
     
@@ -135,7 +157,6 @@ def create_modern_excel(df, client_name):
     worksheet_dash.write('C8', 'الربح الصافي للشركة:', header_format)
     worksheet_dash.write('D8', total_profit, money_format)
 
-    # إضافة رسم بياني دائري (Pie Chart) يوضح توزيع الأموال
     pie_chart = workbook_obj.add_chart({'type': 'pie'})
     pie_chart.add_series({
         'name': 'توزيع المبالغ',
@@ -146,7 +167,6 @@ def create_modern_excel(df, client_name):
     pie_chart.set_title({'name': 'نسبة الأرباح مقابل المصروفات'})
     worksheet_dash.insert_chart('F6', pie_chart, {'x_offset': 25, 'y_offset': 10})
 
-    # رسم بياني عمودي لأفضل المناديب إنتاجية (Bar Chart)
     if len(df) > 0 and 'اسم المندوب' in df.columns and 'الطلبات المحققة' in df.columns:
         bar_chart = workbook_obj.add_chart({'type': 'column'})
         max_row = len(df) + 1
@@ -192,7 +212,7 @@ with st.sidebar:
     st.markdown("## ⚙️ إعدادات النظام")
     selected_client = st.radio("اختر العميل المراد حسابه:", ["Supermall", "Ninja (نينجا)", "Kita (كيتا)", "HungerStation (هنقرستيشن)"], index=0)
     st.divider()
-    st.caption("نظام الحسابات الذكي الموحد v28.0 (Multi-Format & Dashboards)")
+    st.caption("نظام الحسابات الذكي الموحد v29.0 (مع دعم قراءة الصور بالذكاء البصري)")
 
 # ----------------- 6. دوال العمليات المالية -----------------
 def calc_supermall_revenue(orders): return orders * 9 if orders <= 400 else (orders * 10 if orders <= 500 else (orders * 11 if orders <= 600 else orders * 12))
@@ -215,27 +235,24 @@ def get_smart_car_allowance(row_str, report_days):
 
 # ----------------- 7. منطقة الرفع الذكية (تقبل كل الصيغ) -----------------
 st.markdown(f"### 📂 مركز التحليل الذكي لمشروع: `{selected_client}`")
-st.info("💡 يمكنك الآن رفع ملفات بصيغ: (Excel, CSV, PDF, Word, أو صور). سيقوم الذكاء باستخراج الجداول منها.")
+st.info("💡 يمكنك الآن رفع ملفات بصيغ: (Excel, CSV, PDF, Word, أو صور). سيقوم الذكاء باستخراج الجداول والنصوص منها.")
 
 col1, col2, col3 = st.columns(3)
-# تحديث نوع الملفات المسموحة في أداة الرفع
 allowed_types = ['xlsx', 'xls', 'csv', 'pdf', 'docx', 'png', 'jpg', 'jpeg']
 with col1: perf_file = st.file_uploader("1. تقرير الأداء", type=allowed_types, key="u1")
 with col2: agent_info_file = st.file_uploader("2. بيانات المناديب", type=allowed_types, key="u3")
 with col3: car_fuel_file = st.file_uploader("3. استهلاك البنزين", type=allowed_types, key="u2")
 
 if perf_file and agent_info_file and car_fuel_file:
-    with st.spinner('⏳ جاري التحليل واستخراج البيانات بذكاء...'):
+    with st.spinner('⏳ جاري التحليل واستخراج البيانات بذكاء (قد يستغرق بعض الوقت لقراءة الصور)...'):
         try:
-            # استخدام محرك القراءة الذكي
             df_perf = smart_read_file(perf_file)
             df_agents = smart_read_file(agent_info_file)
             df_cars = smart_read_file(car_fuel_file)
 
             if df_perf.empty or df_agents.empty:
-                st.warning("تعذر قراءة الجداول من الملفات المرفوعة. يرجى التأكد من محتواها أو استخدام صيغة Excel.")
+                st.warning("لم يتم العثور على جداول صالحة بعد استخراج البيانات. في حال استخدام الصور، تأكد من وضوح النصوص وأن أعمدة الجدول متقاربة.")
             else:
-                # تنظيف الأعمدة والدمج
                 for col in df_agents.columns:
                     if str(col).strip() in ['رقم الإقامة', 'Iqama', 'رقم الاقامة']: df_agents.rename(columns={col: 'Iqama'}, inplace=True)
                 
@@ -249,11 +266,9 @@ if perf_file and agent_info_file and car_fuel_file:
                 else:
                     df_merged = df_perf.copy()
 
-                # معالجة البنزين
                 driver_col_fuel = 'السائقين المعينين للمركبة' if 'السائقين المعينين للمركبة' in df_cars.columns else ('اسم السائق' if 'اسم السائق' in df_cars.columns else None)
                 cost_col_fuel = 'إجمالي المبلغ المستخدم' if 'إجمالي المبلغ المستخدم' in df_cars.columns else ('القيمة' if 'القيمة' in df_cars.columns else None)
-                liters_col_fuel = 'عدد اللترات' if 'عدد اللترات' in df_cars.columns else None
-
+                
                 if driver_col_fuel and cost_col_fuel:
                     df_cars[cost_col_fuel] = pd.to_numeric(df_cars[cost_col_fuel], errors='coerce').fillna(0)
                     df_cars['Clean_Fuel_Name'] = df_cars[driver_col_fuel].apply(norm_text)
@@ -273,10 +288,9 @@ if perf_file and agent_info_file and car_fuel_file:
                 orders_col = 'Grand Total Delivered' if 'Grand Total Delivered' in df_merged.columns else 'الطلبات الناجحة'
                 df_merged['الطلبات المحققة'] = pd.to_numeric(df_merged[orders_col], errors='coerce').fillna(0)
 
-                # الإيرادات
                 if selected_client == "Supermall": df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'].apply(calc_supermall_revenue)
                 elif selected_client == "Ninja (نينجا)": df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'].apply(calc_ninja_revenue)
-                else: df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'] * 6 # Default fallback
+                else: df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'] * 6 
 
                 def calc_agent_dues_final(row):
                     orders = row['الطلبات المحققة']
@@ -292,7 +306,6 @@ if perf_file and agent_info_file and car_fuel_file:
                 
                 if 'Iqama' in df_merged.columns: df_merged.rename(columns={'Iqama': 'رقم الإقامة'}, inplace=True)
 
-                # --- 8. واجهة العرض والتصدير المودرن ---
                 rev_val = df_merged['إيراد الشركة من العميل'].sum()
                 cost_val = df_merged['إجمالي المستحق للمندوب'].sum()
                 profit_val = df_merged['ربح الشركة الصافي'].sum()
@@ -310,7 +323,6 @@ if perf_file and agent_info_file and car_fuel_file:
                 st.write("")
                 st.dataframe(final_df, use_container_width=True)
 
-                # زر التصدير العبقري 
                 st.download_button(
                     "📥 تصدير الداشبورد المالي (Excel بتصميم عصري ورسوم بيانية)", 
                     data=create_modern_excel(final_df, selected_client), 
