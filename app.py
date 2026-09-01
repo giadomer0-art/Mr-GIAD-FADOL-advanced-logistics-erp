@@ -120,8 +120,8 @@ def create_modern_excel(df, client_name):
 
 # --- الواجهة الرئيسية ---
 st.markdown('<style>*{direction:rtl; text-align:right;}</style>', unsafe_allow_html=True)
-st.title("📊 المنظومة المالية الشاملة (v34.0 - جدار الحماية)")
-st.info("💡 النظام الآن يستخدم فلاتر صارمة لمنع ظهور اليوزرنيم في النتائج. يعتمد فقط على الاسم العربي ورقم الإقامة.")
+st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
+st.info("💡 تطوير واعمال د. جياد عمر محمد فضل")
 
 selected_client = st.sidebar.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
 
@@ -160,7 +160,6 @@ if perf_file and agent_info_file and car_fuel_file:
             p_user = str(p_row.get('perf_user', '')).strip().lower()
             p_id = str(p_row.get('perf_id', '')).replace('.0', '').strip().lower()
             
-            # اليوزر والآيدي هما مجرد كوبري للبحث
             search_keys = [k for k in [p_iqama, p_name, p_user, p_id] if k and k != 'nan' and len(k) > 2]
             
             for _, a_row in df_agents.iterrows():
@@ -175,7 +174,6 @@ if perf_file and agent_info_file and car_fuel_file:
                     break
                     
             row_data = p_row.to_dict()
-            # مسح أي أعمدة قديمة تحمل اسم الإقامة لمنع التداخل
             for k in list(row_data.keys()):
                 if 'إقامة' in str(k) or 'اقامة' in str(k) or 'اسم المندوب' in str(k):
                     del row_data[k]
@@ -189,22 +187,16 @@ if perf_file and agent_info_file and car_fuel_file:
                 raw_name = p_name
                 row_data['agent_full_text'] = p_name + " " + p_user
 
-            # --- 🛡️ جدار الحماية: تصفية الإقامة والاسم ---
-            
-            # 1. تنظيف الإقامة: السماح بالأرقام فقط
             clean_iqama = re.sub(r'\D', '', raw_iqama)
             if len(clean_iqama) >= 8:
                 row_data['رقم الإقامة'] = clean_iqama
             else:
-                # إذا كانت خاطئة (مثل elsiddiq-4466)، ابحث عن 10 أرقام في كامل السطر!
                 found_iqama = re.search(r'\b[12]\d{9}\b', row_data['agent_full_text'])
                 row_data['رقم الإقامة'] = found_iqama.group(0) if found_iqama else 'غير مسجل'
 
-            # 2. تنظيف الاسم: تفضيل الاسم العربي دائماً
             if re.search(r'[\u0600-\u06FF]', raw_name):
                 row_data['اسم المندوب'] = raw_name.title()
             else:
-                # إذا كان الاسم المسحوب إنجليزياً، نعود لاسم الأداء إذا كان عربياً
                 if re.search(r'[\u0600-\u06FF]', p_name):
                     row_data['اسم المندوب'] = p_name.title()
                 else:
@@ -214,7 +206,6 @@ if perf_file and agent_info_file and car_fuel_file:
 
         df_merged = pd.DataFrame(processed_rows)
 
-        # --- معالجة البنزين ---
         rename_col(df_cars, ['السائقين المعينين للمركبة', 'اسم السائق', 'Driver'], 'Driver_Name')
         rename_col(df_cars, ['إجمالي المبلغ المستخدم', 'القيمة', 'Total', 'Amount'], 'Fuel_Cost')
 
@@ -233,7 +224,6 @@ if perf_file and agent_info_file and car_fuel_file:
         else:
             df_merged['مخصص البنزين'] = 0
 
-        # --- الحسابات النهائية ---
         rename_col(df_merged, ['Grand Total Delivered', 'الطلبات الناجحة', 'Orders'], 'الطلبات المحققة')
         df_merged['الطلبات المحققة'] = pd.to_numeric(df_merged.get('الطلبات المحققة', 0), errors='coerce').fillna(0)
 
