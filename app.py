@@ -3,6 +3,7 @@ import pandas as pd
 from io import BytesIO
 import re
 import warnings
+from datetime import datetime
 
 try:
     import pdfplumber
@@ -19,7 +20,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="شركة الحلول المتقدمة | المنظومة الشاملة", page_icon="⚡", layout="wide")
 
-# --- 1. محرك قراءة كافة صيغ الملفات والصور ---
+# --- 1. محرك القراءة الشامل ---
 def smart_read_file(uploaded_file):
     if uploaded_file is None: return None
     file_name = uploaded_file.name.lower()
@@ -151,23 +152,22 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- 5. إنشاء الداشبورد المطور مع توضيح الفترات في Excel ---
+# --- 5. إنشاء الداشبورد المطور ---
 def create_modern_excel(df, client_name, date_context_str, report_days):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
     wb = workbook.book
     
-    # 1. شيت البيانات التفصيلية مع هيدر الفترة والتواريخ
     ws_data = wb.add_worksheet('البيانات التفصيلية')
     
     title_fmt = wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#0F172A', 'align': 'right', 'valign': 'vcenter'})
     meta_fmt = wb.add_format({'bold': True, 'font_size': 11, 'font_color': '#0284C7', 'bg_color': '#E0F2FE', 'align': 'right', 'valign': 'vcenter', 'border': 1})
     header_fmt = wb.add_format({'bold': True, 'bg_color': '#1E293B', 'font_color': 'white', 'align': 'center', 'valign': 'vcenter', 'border': 1})
     data_fmt = wb.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1})
+    total_fmt = wb.add_format({'bold': True, 'bg_color': '#0284C7', 'font_color': 'white', 'align': 'center', 'valign': 'vcenter', 'border': 1})
     red_fmt = wb.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'align': 'center', 'border': 1})
     green_fmt = wb.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'align': 'center', 'border': 1})
     
-    # كتابة الهيدر التعريفي أعلى شيت البيانات
     ws_data.write('A1', f"📊 التقرير المالي والتشغيلي الموحد - مشروع: {client_name}", title_fmt)
     ws_data.write('A2', f"📅 فترة التقرير: {date_context_str} | عدد الأيام المحسوبة: {report_days} يوم", meta_fmt)
     
@@ -177,26 +177,27 @@ def create_modern_excel(df, client_name, date_context_str, report_days):
         ws_data.set_column(col_num, col_num, 18)
         
     for row_num, row_values in enumerate(df.values):
+        is_last_row = (row_num == len(df) - 1)
+        fmt = total_fmt if is_last_row else data_fmt
         for col_num, val in enumerate(row_values):
-            ws_data.write(start_row + 1 + row_num, col_num, val, data_fmt)
+            ws_data.write(start_row + 1 + row_num, col_num, val, fmt)
 
-    max_r = start_row + 1 + len(df)
+    max_data_row = start_row + len(df) 
     if 'ربح الشركة الصافي' in df.columns:
         idx = df.columns.get_loc('ربح الشركة الصافي')
         col_let = chr(65 + idx) if idx < 26 else chr(64 + idx//26) + chr(65 + idx%26)
-        ws_data.conditional_format(f'{col_let}5:{col_let}{max_r}', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_fmt})
-        ws_data.conditional_format(f'{col_let}5:{col_let}{max_r}', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt})
+        ws_data.conditional_format(f'{col_let}5:{col_let}{max_data_row}', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_fmt})
+        ws_data.conditional_format(f'{col_let}5:{col_let}{max_data_row}', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt})
 
-    # 2. شيت الداشبورد التفاعلي
     ws_dash = wb.add_worksheet('📊 لوحة القيادة (Dashboard)')
     ws_dash.merge_range('B2:F3', f'التقرير المالي والتشغيلي - مشروع {client_name}', wb.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'}))
     ws_dash.merge_range('B4:F4', f'📅 فترة التقرير المكتشفة: {date_context_str} | إجمالي الأيام: {report_days} يوم', wb.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'font_color': '#0369A1', 'bg_color': '#F0F9FF', 'border': 1}))
     
     chart = wb.add_chart({'type': 'column'})
-    if len(df) > 0 and 'اسم المندوب' in df.columns:
+    if len(df) > 1 and 'اسم المندوب' in df.columns:
         name_idx = chr(65 + df.columns.get_loc('اسم المندوب'))
         order_idx = chr(65 + df.columns.get_loc('الطلبات المحققة'))
-        chart.add_series({'name': 'الطلبات المحققة', 'categories': f'=البيانات التفصيلية!${name_idx}$5:${name_idx}${max_r}', 'values': f'=البيانات التفصيلية!${order_idx}$5:${order_idx}${max_r}'})
+        chart.add_series({'name': 'الطلبات المحققة', 'categories': f'=البيانات التفصيلية!${name_idx}$5:${name_idx}${max_data_row}', 'values': f'=البيانات التفصيلية!${order_idx}$5:${order_idx}${max_data_row}'})
         ws_dash.insert_chart('B7', chart)
         
     workbook.close()
@@ -205,7 +206,7 @@ def create_modern_excel(df, client_name, date_context_str, report_days):
 # --- 6. الواجهة الرئيسية ---
 st.markdown('<style>*{direction:rtl; text-align:right;} .time-badge {background:#E0F2FE; color:#0284C7; padding:10px 18px; border-radius:10px; font-weight:bold; display:inline-block; margin-bottom:15px; border:1px solid #BAE6FD; font-size: 1.05rem;}</style>', unsafe_allow_html=True)
 st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
-st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v38.0 (توثيق الفترة الزمنية وعدد الأيام في التصدير)")
+st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v39.0 (إضافة صف المجاميع الكلية أسفل الجدول)")
 
 selected_client = st.sidebar.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
 
@@ -216,15 +217,12 @@ agent_info_file = col2.file_uploader("2. بيانات المناديب", type=al
 car_fuel_file = col3.file_uploader("3. استهلاك البنزين", type=allowed_types)
 
 if perf_file and car_fuel_file:
-    with st.spinner('⏳ جاري المسح الشامل وتحديد فترات العمل...'):
+    with st.spinner('⏳ جاري المسح وحساب الإجماليات...'):
         df_perf = smart_read_file(perf_file)
         df_agents = smart_read_file(agent_info_file) if agent_info_file else pd.DataFrame()
         df_cars = smart_read_file(car_fuel_file)
 
-        # قراءة التواريخ من التقرير
         date_context_str, report_days = extract_report_info(df_perf)
-        
-        # عرض فترة التقرير في الواجهة
         st.markdown(f'<div class="time-badge">📅 <b>فترة التقرير المكتشفة:</b> {date_context_str} | <b>عدد الأيام:</b> {report_days} يوم</div>', unsafe_allow_html=True)
 
         def rename_col(df, possible_names, target_name):
@@ -294,7 +292,6 @@ if perf_file and car_fuel_file:
 
         if 'Driver_Name' in df_cars.columns and 'Fuel_Cost' in df_cars.columns:
             df_cars['Fuel_Cost'] = pd.to_numeric(df_cars['Fuel_Cost'], errors='coerce').fillna(0)
-            
             def get_fuel(agent_name, agent_user, agent_full_text):
                 total_fuel = 0
                 for _, car_row in df_cars.iterrows():
@@ -302,14 +299,12 @@ if perf_file and car_fuel_file:
                     if match_driver_to_fuel(agent_name, agent_user, car_driver):
                         total_fuel += car_row['Fuel_Cost']
                 return total_fuel
-                
             df_merged['مخصص البنزين'] = df_merged.apply(lambda r: get_fuel(r['اسم المندوب'], r.get('perf_user', ''), r.get('agent_full_text', '')), axis=1)
         else:
             df_merged['مخصص البنزين'] = 0
 
         rename_col(df_merged, ['Grand Total Delivered', 'الطلبات الناجحة', 'Orders'], 'الطلبات المحققة')
         df_merged['الطلبات المحققة'] = pd.to_numeric(df_merged.get('الطلبات المحققة', 0), errors='coerce').fillna(0)
-
         df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'].apply(calc_supermall_revenue) if selected_client == "Supermall" else (df_merged['الطلبات المحققة'].apply(calc_ninja_revenue) if selected_client == "Ninja" else df_merged['الطلبات المحققة'] * 6)
 
         def calc_dues(row):
@@ -325,5 +320,17 @@ if perf_file and car_fuel_file:
         display_cols = ['رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات المحققة', 'مخصص البنزين', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي']
         final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
         
+        # --- إضافة صف المجاميع أسفل الجدول ---
+        total_row = {col: '-' for col in final_df.columns}
+        total_row['اسم المندوب'] = 'الإجمالي الكلي (المجموع)'
+        
+        numeric_cols = ['الطلبات المحققة', 'مخصص البنزين', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي']
+        for col in numeric_cols:
+            if col in final_df.columns:
+                total_row[col] = final_df[col].sum()
+                
+        # دمج صف المجاميع في نهاية الجدول
+        final_df = pd.concat([final_df, pd.DataFrame([total_row])], ignore_index=True)
+
         st.dataframe(final_df, use_container_width=True)
         st.download_button("📥 تصدير الداشبورد المالي (Excel)", data=create_modern_excel(final_df, selected_client, date_context_str, report_days), file_name=f"Dashboard_{selected_client}.xlsx")
