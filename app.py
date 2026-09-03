@@ -3,7 +3,6 @@ import pandas as pd
 from io import BytesIO
 import re
 import warnings
-from datetime import datetime
 
 try:
     import pdfplumber
@@ -20,7 +19,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="شركة الحلول المتقدمة | المنظومة الشاملة", page_icon="⚡", layout="wide")
 
-# --- 1. محرك القراءة الشامل ---
+# --- 1. محرك قراءة كافة صيغ الملفات والصور ---
 def smart_read_file(uploaded_file):
     if uploaded_file is None: return None
     file_name = uploaded_file.name.lower()
@@ -56,14 +55,12 @@ def smart_read_file(uploaded_file):
 # --- 2. المستشعر الزمني الذكي (Time-Context AI) ---
 def extract_report_info(df):
     date_strs = set()
-    # البحث في أسماء الأعمدة (مثل 29 Aug Delivered)
     for col in df.columns:
         c = str(col).lower()
         if 'total' in c or 'grand' in c: continue
         m = re.search(r'\b(\d{1,2}[\s\-]+[a-z]{3})\b', c)
         if m: date_strs.add(m.group(1).replace('-', ' ').title())
         
-    # إذا لم يجد في العناوين، يبحث في أعمدة التواريخ
     if not date_strs:
         for col in df.columns:
             if str(col).strip().lower() in ['date', 'التاريخ', 'day', 'اليوم']:
@@ -75,16 +72,15 @@ def extract_report_info(df):
     
     num_days = len(date_strs)
     if num_days == 0:
-        return "غير محدد (تم افتراض 30 يوم للحسابات)", 30
+        return "غير محدد (افتراضي 30 يوم)", 30
         
     try:
-        # ترتيب التواريخ من الأقدم للأحدث
         parsed = sorted([pd.to_datetime(d + " 2026", format='%d %b %Y') for d in date_strs])
         start_d = parsed[0].strftime('%d %b')
         end_d = parsed[-1].strftime('%d %b')
         
         if num_days == 1:
-            return f"يوم واحد (تاريخ: {start_d})", num_days
+            return f"يوم واحد ({start_d})", num_days
         elif num_days >= 28:
             return f"شهر كامل (من {start_d} إلى {end_d})", num_days
         else:
@@ -155,47 +151,61 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- 5. إنشاء الداشبورد ---
-def create_modern_excel(df, client_name, date_context_str):
+# --- 5. إنشاء الداشبورد المطور مع توضيح الفترات في Excel ---
+def create_modern_excel(df, client_name, date_context_str, report_days):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(workbook, index=False, sheet_name='البيانات')
-    
     wb = workbook.book
-    ws = workbook.sheets['البيانات']
-    header_fmt = wb.add_format({'bold': True, 'bg_color': '#1E293B', 'font_color': 'white', 'align': 'center'})
-    red_fmt = wb.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-    green_fmt = wb.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
     
+    # 1. شيت البيانات التفصيلية مع هيدر الفترة والتواريخ
+    ws_data = wb.add_worksheet('البيانات التفصيلية')
+    
+    title_fmt = wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#0F172A', 'align': 'right', 'valign': 'vcenter'})
+    meta_fmt = wb.add_format({'bold': True, 'font_size': 11, 'font_color': '#0284C7', 'bg_color': '#E0F2FE', 'align': 'right', 'valign': 'vcenter', 'border': 1})
+    header_fmt = wb.add_format({'bold': True, 'bg_color': '#1E293B', 'font_color': 'white', 'align': 'center', 'valign': 'vcenter', 'border': 1})
+    data_fmt = wb.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1})
+    red_fmt = wb.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'align': 'center', 'border': 1})
+    green_fmt = wb.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'align': 'center', 'border': 1})
+    
+    # كتابة الهيدر التعريفي أعلى شيت البيانات
+    ws_data.write('A1', f"📊 التقرير المالي والتشغيلي الموحد - مشروع: {client_name}", title_fmt)
+    ws_data.write('A2', f"📅 فترة التقرير: {date_context_str} | عدد الأيام المحسوبة: {report_days} يوم", meta_fmt)
+    
+    start_row = 3
     for col_num, value in enumerate(df.columns):
-        ws.write(0, col_num, value, header_fmt)
-        ws.set_column(col_num, col_num, 18)
+        ws_data.write(start_row, col_num, value, header_fmt)
+        ws_data.set_column(col_num, col_num, 18)
         
+    for row_num, row_values in enumerate(df.values):
+        for col_num, val in enumerate(row_values):
+            ws_data.write(start_row + 1 + row_num, col_num, val, data_fmt)
+
+    max_r = start_row + 1 + len(df)
     if 'ربح الشركة الصافي' in df.columns:
         idx = df.columns.get_loc('ربح الشركة الصافي')
         col_let = chr(65 + idx) if idx < 26 else chr(64 + idx//26) + chr(65 + idx%26)
-        ws.conditional_format(f'{col_let}2:{col_let}{len(df)+1}', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_fmt})
-        ws.conditional_format(f'{col_let}2:{col_let}{len(df)+1}', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt})
+        ws_data.conditional_format(f'{col_let}5:{col_let}{max_r}', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_fmt})
+        ws_data.conditional_format(f'{col_let}5:{col_let}{max_r}', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt})
 
-    ws_dash = wb.add_worksheet('الداشبورد')
-    # إضافة العناوين والتواريخ بلمسة احترافية
+    # 2. شيت الداشبورد التفاعلي
+    ws_dash = wb.add_worksheet('📊 لوحة القيادة (Dashboard)')
     ws_dash.merge_range('B2:F3', f'التقرير المالي والتشغيلي - مشروع {client_name}', wb.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'}))
-    ws_dash.merge_range('B4:F4', f'📅 فترة التقرير: {date_context_str}', wb.add_format({'bold': True, 'font_size': 12, 'align': 'center', 'font_color': '#475569'}))
+    ws_dash.merge_range('B4:F4', f'📅 فترة التقرير المكتشفة: {date_context_str} | إجمالي الأيام: {report_days} يوم', wb.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'font_color': '#0369A1', 'bg_color': '#F0F9FF', 'border': 1}))
     
     chart = wb.add_chart({'type': 'column'})
     if len(df) > 0 and 'اسم المندوب' in df.columns:
         name_idx = chr(65 + df.columns.get_loc('اسم المندوب'))
         order_idx = chr(65 + df.columns.get_loc('الطلبات المحققة'))
-        chart.add_series({'name': 'الطلبات المحققة', 'categories': f'=البيانات!${name_idx}$2:${name_idx}${len(df)+1}', 'values': f'=البيانات!${order_idx}$2:${order_idx}${len(df)+1}'})
+        chart.add_series({'name': 'الطلبات المحققة', 'categories': f'=البيانات التفصيلية!${name_idx}$5:${name_idx}${max_r}', 'values': f'=البيانات التفصيلية!${order_idx}$5:${order_idx}${max_r}'})
         ws_dash.insert_chart('B7', chart)
         
     workbook.close()
     return output.getvalue()
 
 # --- 6. الواجهة الرئيسية ---
-st.markdown('<style>*{direction:rtl; text-align:right;} .time-badge {background:#E0F2FE; color:#0284C7; padding:8px 15px; border-radius:8px; font-weight:bold; display:inline-block; margin-bottom:15px; border:1px solid #BAE6FD;}</style>', unsafe_allow_html=True)
+st.markdown('<style>*{direction:rtl; text-align:right;} .time-badge {background:#E0F2FE; color:#0284C7; padding:10px 18px; border-radius:10px; font-weight:bold; display:inline-block; margin-bottom:15px; border:1px solid #BAE6FD; font-size: 1.05rem;}</style>', unsafe_allow_html=True)
 st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
-st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v37.0 (مزود بمستشعر التواريخ الذكي)")
+st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v38.0 (توثيق الفترة الزمنية وعدد الأيام في التصدير)")
 
 selected_client = st.sidebar.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
 
@@ -215,7 +225,7 @@ if perf_file and car_fuel_file:
         date_context_str, report_days = extract_report_info(df_perf)
         
         # عرض فترة التقرير في الواجهة
-        st.markdown(f'<div class="time-badge">📅 فترة التقرير المكتشفة: {date_context_str}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="time-badge">📅 <b>فترة التقرير المكتشفة:</b> {date_context_str} | <b>عدد الأيام:</b> {report_days} يوم</div>', unsafe_allow_html=True)
 
         def rename_col(df, possible_names, target_name):
             if df.empty: return
@@ -306,7 +316,6 @@ if perf_file and car_fuel_file:
             row_str = str(row.get('agent_full_text', ''))
             is_free = True if selected_client == "Ninja" else ('فري' in row_str or 'حر' in row_str)
             sal = calc_salary_by_project(row['الطلبات المحققة'], selected_client, is_free)
-            # تم ربط البدل هنا بالأيام المستخرجة آلياً من التقرير (report_days)
             car = get_smart_car_allowance(row_str, report_days)
             return pd.Series(['فري لانسر' if is_free else 'كفالة', sal, car, sal + car])
 
@@ -317,4 +326,4 @@ if perf_file and car_fuel_file:
         final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
         
         st.dataframe(final_df, use_container_width=True)
-        st.download_button("📥 تصدير الداشبورد المالي (Excel)", data=create_modern_excel(final_df, selected_client, date_context_str), file_name=f"Dashboard_{selected_client}.xlsx")
+        st.download_button("📥 تصدير الداشبورد المالي (Excel)", data=create_modern_excel(final_df, selected_client, date_context_str, report_days), file_name=f"Dashboard_{selected_client}.xlsx")
