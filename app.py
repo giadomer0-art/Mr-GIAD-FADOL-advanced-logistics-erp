@@ -20,13 +20,20 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="شركة الحلول المتقدمة | المنظومة الشاملة", page_icon="⚡", layout="wide")
 
-# --- 1. محرك القراءة الشامل ---
+# --- 1. محرك القراءة الشامل واستخراج تاريخ الملف ---
 def smart_read_file(uploaded_file):
-    if uploaded_file is None: return None
+    if uploaded_file is None: return None, None
     file_name = uploaded_file.name.lower()
+    
+    # محاولة استخراج تاريخ إصدار التقرير من اسم الملف (مثل: 2026-09-01)
+    file_date = "غير محدد"
+    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', file_name)
+    if date_match:
+        file_date = date_match.group(1)
+        
     try:
-        if file_name.endswith(('.xlsx', '.xls')): return pd.read_excel(uploaded_file)
-        elif file_name.endswith('.csv'): return pd.read_csv(uploaded_file)
+        if file_name.endswith(('.xlsx', '.xls')): return pd.read_excel(uploaded_file), file_date
+        elif file_name.endswith('.csv'): return pd.read_csv(uploaded_file), file_date
         elif file_name.endswith('.pdf'):
             try:
                 tables = []
@@ -34,9 +41,9 @@ def smart_read_file(uploaded_file):
                     for page in pdf.pages:
                         extracted = page.extract_table()
                         if extracted: tables.extend(extracted)
-                if tables and len(tables) > 1: return pd.DataFrame(tables[1:], columns=tables[0])
+                if tables and len(tables) > 1: return pd.DataFrame(tables[1:], columns=tables[0]), file_date
             except: pass
-            return pd.DataFrame()
+            return pd.DataFrame(), file_date
         elif file_name.endswith(('.png', '.jpg', '.jpeg')):
             try:
                 img = Image.open(uploaded_file)
@@ -46,12 +53,12 @@ def smart_read_file(uploaded_file):
                 if data:
                     max_cols = max(len(row) for row in data)
                     padded_data = [row + [''] * (max_cols - len(row)) for row in data]
-                    return pd.DataFrame(padded_data[1:], columns=padded_data[0] if len(padded_data) > 1 else None)
+                    return pd.DataFrame(padded_data[1:], columns=padded_data[0] if len(padded_data) > 1 else None), file_date
             except: pass
-            return pd.DataFrame()
-        return pd.DataFrame()
+            return pd.DataFrame(), file_date
+        return pd.DataFrame(), file_date
     except:
-        return pd.DataFrame()
+        return pd.DataFrame(), file_date
 
 # --- 2. المستشعر الزمني الذكي (Time-Context AI) ---
 def extract_report_info(df):
@@ -73,7 +80,7 @@ def extract_report_info(df):
     
     num_days = len(date_strs)
     if num_days == 0:
-        return "غير محدد (افتراضي 30 يوم)", 30
+        return "غير محدد (تم افتراض 30 يوم)", 30
         
     try:
         parsed = sorted([pd.to_datetime(d + " 2026", format='%d %b %Y') for d in date_strs])
@@ -81,14 +88,14 @@ def extract_report_info(df):
         end_d = parsed[-1].strftime('%d %b')
         
         if num_days == 1:
-            return f"يوم واحد ({start_d})", num_days
+            return f"يوم عمل واحد ({start_d})", num_days
         elif num_days >= 28:
-            return f"شهر كامل (من {start_d} إلى {end_d})", num_days
+            return f"شهر تشغيلي (من {start_d} إلى {end_d})", num_days
         else:
-            return f"من {start_d} إلى {end_d} (المدة: {num_days} أيام)", num_days
+            return f"من {start_d} إلى {end_d}", num_days
     except:
         if num_days == 1:
-            return f"يوم واحد ({list(date_strs)[0]})", num_days
+            return f"يوم عمل واحد ({list(date_strs)[0]})", num_days
         else:
             return f"المدة: {num_days} أيام", num_days
 
@@ -153,7 +160,7 @@ def get_smart_car_allowance(row_str, report_days):
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
 # --- 5. إنشاء الداشبورد ---
-def create_modern_excel(df, client_name, date_context_str, report_days):
+def create_modern_excel(df, client_name, date_context_str, report_days, file_date):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
     wb = workbook.book
@@ -169,7 +176,7 @@ def create_modern_excel(df, client_name, date_context_str, report_days):
     green_fmt = wb.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100', 'align': 'center', 'border': 1})
     
     ws_data.write('A1', f"📊 التقرير المالي والتشغيلي الموحد - مشروع: {client_name}", title_fmt)
-    ws_data.write('A2', f"📅 فترة التقرير: {date_context_str} | عدد الأيام المحسوبة: {report_days} يوم", meta_fmt)
+    ws_data.write('A2', f"📅 أيام العمل: {date_context_str} ({report_days} أيام) | 🕒 تاريخ إصدار الملف: {file_date}", meta_fmt)
     
     start_row = 3
     for col_num, value in enumerate(df.columns):
@@ -190,8 +197,8 @@ def create_modern_excel(df, client_name, date_context_str, report_days):
         ws_data.conditional_format(f'{col_let}5:{col_let}{max_data_row}', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt})
 
     ws_dash = wb.add_worksheet('📊 لوحة القيادة (Dashboard)')
-    ws_dash.merge_range('B2:F3', f'التقرير المالي والتشغيلي - مشروع {client_name}', wb.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'}))
-    ws_dash.merge_range('B4:F4', f'📅 فترة التقرير المكتشفة: {date_context_str} | إجمالي الأيام: {report_days} يوم', wb.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'font_color': '#0369A1', 'bg_color': '#F0F9FF', 'border': 1}))
+    ws_dash.merge_range('B2:G3', f'التقرير المالي والتشغيلي - مشروع {client_name}', wb.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'}))
+    ws_dash.merge_range('B4:G4', f'📅 أيام العمل: {date_context_str} ({report_days} أيام) | 🕒 تاريخ الإصدار: {file_date}', wb.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'font_color': '#0369A1', 'bg_color': '#F0F9FF', 'border': 1}))
     
     chart = wb.add_chart({'type': 'column'})
     if len(df) > 1 and 'اسم المندوب' in df.columns:
@@ -207,7 +214,7 @@ def create_modern_excel(df, client_name, date_context_str, report_days):
 st.markdown("""
     <style>
         *{direction:rtl; text-align:right;} 
-        .time-badge {background:#E0F2FE; color:#0284C7; padding:10px 18px; border-radius:10px; font-weight:bold; display:inline-block; margin-bottom:15px; border:1px solid #BAE6FD; font-size: 1.05rem;}
+        .time-badge {background:#E0F2FE; color:#0284C7; padding:10px 18px; border-radius:10px; font-weight:bold; display:block; margin-bottom:15px; border:1px solid #BAE6FD; font-size: 1.05rem;}
         .whatsapp-btn {
             display: inline-block;
             background-color: #25D366;
@@ -234,7 +241,6 @@ st.markdown("""
 st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
 st.info("💡 تطوير وأعمال: Dr. GIAD FADOL")
 
-# --- الشريط الجانبي (Sidebar) ---
 with st.sidebar:
     selected_client = st.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
     st.markdown("---")
@@ -251,13 +257,20 @@ agent_info_file = col2.file_uploader("2. بيانات المناديب", type=al
 car_fuel_file = col3.file_uploader("3. استهلاك البنزين", type=allowed_types)
 
 if perf_file and car_fuel_file:
-    with st.spinner('⏳ جاري المسح وحساب الإجماليات...'):
-        df_perf = smart_read_file(perf_file)
-        df_agents = smart_read_file(agent_info_file) if agent_info_file else pd.DataFrame()
-        df_cars = smart_read_file(car_fuel_file)
+    with st.spinner('⏳ جاري المسح وحساب الإجماليات والتواريخ...'):
+        df_perf, report_file_date = smart_read_file(perf_file)
+        df_agents, _ = smart_read_file(agent_info_file) if agent_info_file else (pd.DataFrame(), None)
+        df_cars, fuel_file_date = smart_read_file(car_fuel_file)
 
         date_context_str, report_days = extract_report_info(df_perf)
-        st.markdown(f'<div class="time-badge">📅 <b>فترة التقرير المكتشفة:</b> {date_context_str} | <b>عدد الأيام:</b> {report_days} يوم</div>', unsafe_allow_html=True)
+        
+        # التوثيق الزمني المفصل في الواجهة
+        st.markdown(f'''
+            <div class="time-badge">
+                📅 <b>أيام العمل المكتشفة من البيانات:</b> {date_context_str} ({report_days} أيام)<br>
+                🕒 <b>تاريخ إصدار تقرير الأداء:</b> {report_file_date}
+            </div>
+        ''', unsafe_allow_html=True)
 
         def rename_col(df, possible_names, target_name):
             if df.empty: return
@@ -366,4 +379,4 @@ if perf_file and car_fuel_file:
         final_df = pd.concat([final_df, pd.DataFrame([total_row])], ignore_index=True)
 
         st.dataframe(final_df, use_container_width=True)
-        st.download_button("📥 تصدير الداشبورد المالي (Excel)", data=create_modern_excel(final_df, selected_client, date_context_str, report_days), file_name=f"Dashboard_{selected_client}.xlsx")
+        st.download_button("📥 تصدير الداشبورد المالي (Excel)", data=create_modern_excel(final_df, selected_client, date_context_str, report_days, report_file_date), file_name=f"Dashboard_{selected_client}.xlsx")
