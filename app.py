@@ -152,7 +152,7 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- 5. إنشاء الداشبورد المطور ---
+# --- 5. إنشاء الداشبورد המطور ---
 def create_modern_excel(df, client_name, date_context_str, report_days):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -204,11 +204,48 @@ def create_modern_excel(df, client_name, date_context_str, report_days):
     return output.getvalue()
 
 # --- 6. الواجهة الرئيسية ---
-st.markdown('<style>*{direction:rtl; text-align:right;} .time-badge {background:#E0F2FE; color:#0284C7; padding:10px 18px; border-radius:10px; font-weight:bold; display:inline-block; margin-bottom:15px; border:1px solid #BAE6FD; font-size: 1.05rem;}</style>', unsafe_allow_html=True)
-st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
-st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v39.0 (إضافة صف المجاميع الكلية أسفل الجدول)")
+st.markdown("""
+    <style>
+        *{direction:rtl; text-align:right;} 
+        .time-badge {background:#E0F2FE; color:#0284C7; padding:10px 18px; border-radius:10px; font-weight:bold; display:inline-block; margin-bottom:15px; border:1px solid #BAE6FD; font-size: 1.05rem;}
+        /* تصميم زر الواتساب */
+        .whatsapp-btn {
+            display: inline-block;
+            background-color: #25D366;
+            color: white;
+            padding: 12px 20px;
+            text-align: center;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            border: none;
+            width: 100%;
+            margin-top: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: background-color 0.3s ease;
+        }
+        .whatsapp-btn:hover {
+            background-color: #128C7E;
+            color: white;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-selected_client = st.sidebar.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
+st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
+st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v40.0 (تم إضافة زر التواصل المباشر عبر الواتساب)")
+
+# --- الشريط الجانبي (Sidebar) وإضافة زر الواتساب ---
+with st.sidebar:
+    selected_client = st.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
+    st.markdown("---")
+    # زر الواتساب المباشر
+    st.markdown("""
+        <a href="https://wa.me/message/TVFRW7TRANRQL1" target="_blank" class="whatsapp-btn">
+            💬 تحديث عقود الشركات المشغلة
+        </a>
+    """, unsafe_allow_html=True)
+
 
 col1, col2, col3 = st.columns(3)
 allowed_types = ['xlsx', 'csv', 'png', 'jpg', 'jpeg', 'pdf', 'docx']
@@ -329,7 +366,6 @@ if perf_file and car_fuel_file:
             if col in final_df.columns:
                 total_row[col] = final_df[col].sum()
                 
-        # دمج صف المجاميع في نهاية الجدول
         final_df = pd.concat([final_df, pd.DataFrame([total_row])], ignore_index=True)
 
         st.dataframe(final_df, use_container_width=True)
