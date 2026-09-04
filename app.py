@@ -152,7 +152,7 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- 5. إنشاء الداشبورد המطور ---
+# --- 5. إنشاء الداشبورد ---
 def create_modern_excel(df, client_name, date_context_str, report_days):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -208,7 +208,6 @@ st.markdown("""
     <style>
         *{direction:rtl; text-align:right;} 
         .time-badge {background:#E0F2FE; color:#0284C7; padding:10px 18px; border-radius:10px; font-weight:bold; display:inline-block; margin-bottom:15px; border:1px solid #BAE6FD; font-size: 1.05rem;}
-        /* تصميم زر الواتساب */
         .whatsapp-btn {
             display: inline-block;
             background-color: #25D366;
@@ -233,19 +232,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 المنظومة المالية الشاملة لشركة الحلول المتقدمة للخدمات اللوجستية")
-st.info("💡 تطوير وأعمال: د. جياد عمر محمد فضل | v40.0 (تم إضافة زر التواصل المباشر عبر الواتساب)")
+st.info("💡 تطوير وأعمال: Dr. GIAD FADOL")
 
-# --- الشريط الجانبي (Sidebar) وإضافة زر الواتساب ---
+# --- الشريط الجانبي (Sidebar) ---
 with st.sidebar:
     selected_client = st.radio("اختر المشروع:", ["Supermall", "Ninja", "Kita", "HungerStation"])
     st.markdown("---")
-    # زر الواتساب المباشر
     st.markdown("""
         <a href="https://wa.me/message/TVFRW7TRANRQL1" target="_blank" class="whatsapp-btn">
             💬 تحديث عقود الشركات المشغلة
         </a>
     """, unsafe_allow_html=True)
-
 
 col1, col2, col3 = st.columns(3)
 allowed_types = ['xlsx', 'csv', 'png', 'jpg', 'jpeg', 'pdf', 'docx']
