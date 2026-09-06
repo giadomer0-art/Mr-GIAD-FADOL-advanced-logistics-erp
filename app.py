@@ -73,6 +73,52 @@ def extract_report_days(df):
     num_days = len(date_strs)
     return num_days if num_days > 0 else 30
 
+# --- دالة استخراج (أول يوم إنتاج) للمندوب ---
+def get_first_production_day(row, columns):
+    active_dates = []
+    
+    # 1. البحث لو كان التقرير عمودياً (يحتوي على عمود تاريخ صريح)
+    for col in columns:
+        if str(col).strip().lower() in ['date', 'التاريخ', 'day', 'اليوم']:
+            val = row.get(col)
+            if pd.notna(val):
+                try:
+                    return pd.to_datetime(val).strftime('%d %b')
+                except:
+                    return str(val)
+                    
+    # 2. البحث لو كان التقرير أفقياً (أعمدة التواريخ مثل: 29 Aug Delivered)
+    for col in columns:
+        c_str = str(col)
+        if 'total' in c_str.lower() or 'grand' in c_str.lower() or 'avg' in c_str.lower(): continue
+        
+        parsed_date = pd.NaT
+        # صائد التواريخ بصيغة 29 Aug
+        m1 = re.search(r'\b(\d{1,2}[\s\-]+[A-Za-z]{3})\b', c_str)
+        if m1: 
+            parsed_date = pd.to_datetime(m1.group(1) + " 2026", errors='coerce')
+        else:
+            # صائد التواريخ الرقمية (YYYY-MM-DD أو DD/MM/YYYY)
+            m2 = re.search(r'\b(\d{4}-\d{1,2}-\d{1,2})\b', c_str)
+            if m2: parsed_date = pd.to_datetime(m2.group(1), errors='coerce')
+            else:
+                m3 = re.search(r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b', c_str)
+                if m3: parsed_date = pd.to_datetime(m3.group(1), errors='coerce', dayfirst=True)
+        
+        if pd.notna(parsed_date):
+            val = row.get(col)
+            try:
+                # إذا حقق أكثر من 0 في هذا اليوم، يتم تسجيله كيوم إنتاج
+                if float(val) > 0:
+                    active_dates.append(parsed_date)
+            except:
+                pass
+                
+    if active_dates:
+        # إرجاع أقدم تاريخ (أول يوم إنتاج)
+        return min(active_dates).strftime('%d %b')
+    return "-"
+
 # --- 3. محرك الترجمة والذكاء الصوتي ---
 def char_transliterate_ar_to_en(text):
     if not text or pd.isna(text): return ""
@@ -133,13 +179,14 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- 5. إنشاء الداشبورد التفاعلي بدقة ---
+# --- 5. إنشاء الداشبورد التفاعلي بدقة (يمين لليسار RTL) ---
 def create_modern_excel(df, client_name):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
     wb = workbook.book
     
     ws_data = wb.add_worksheet('البيانات التفصيلية')
+    ws_data.right_to_left()
     
     title_fmt = wb.add_format({'bold': True, 'font_size': 14, 'font_color': '#0F172A', 'align': 'right', 'valign': 'vcenter'})
     header_fmt = wb.add_format({'bold': True, 'bg_color': '#1E293B', 'font_color': 'white', 'align': 'center', 'valign': 'vcenter', 'border': 1})
@@ -153,7 +200,14 @@ def create_modern_excel(df, client_name):
     start_row = 2
     for col_num, value in enumerate(df.columns):
         ws_data.write(start_row, col_num, value, header_fmt)
-        ws_data.set_column(col_num, col_num, 18)
+        if value == 'م':
+            ws_data.set_column(col_num, col_num, 5) 
+        elif value == 'اسم المندوب':
+            ws_data.set_column(col_num, col_num, 25) 
+        elif value == 'أول يوم إنتاج':
+            ws_data.set_column(col_num, col_num, 15)
+        else:
+            ws_data.set_column(col_num, col_num, 16)
         
     for row_num, row_values in enumerate(df.values):
         is_last_row = (row_num == len(df) - 1)
@@ -169,6 +223,7 @@ def create_modern_excel(df, client_name):
         ws_data.conditional_format(f'{col_let}4:{col_let}{max_data_row}', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt})
 
     ws_dash = wb.add_worksheet('📊 لوحة القيادة (Dashboard)')
+    ws_dash.right_to_left() 
     ws_dash.merge_range('B2:G3', f'التقرير المالي والتشغيلي - مشروع {client_name}', wb.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'}))
     
     chart = wb.add_chart({'type': 'column'})
@@ -227,7 +282,7 @@ agent_info_file = col2.file_uploader("2. بيانات المناديب", type=al
 car_fuel_file = col3.file_uploader("3. استهلاك البنزين", type=allowed_types)
 
 if perf_file and car_fuel_file:
-    with st.spinner('⏳ جاري المسح وحساب الإجماليات...'):
+    with st.spinner('⏳ جاري المسح وحساب الإجماليات والأهداف...'):
         df_perf = smart_read_file(perf_file)
         df_agents = smart_read_file(agent_info_file) if agent_info_file else pd.DataFrame()
         df_cars = smart_read_file(car_fuel_file)
@@ -249,6 +304,7 @@ if perf_file and car_fuel_file:
         if not df_agents.empty:
             rename_col(df_agents, ['رقم الإقامة', 'Iqama', 'رقم الهوية', 'رقم الاقامة'], 'master_iqama')
             rename_col(df_agents, ['اسم المندوب', 'الاسم', 'Name'], 'master_name')
+            rename_col(df_agents, ['الرقم الوظيفي', 'رقم وظيفي', 'Job ID', 'Emp ID', 'job_id', 'الرقم'], 'master_job_id')
 
         processed_rows = []
         for _, p_row in df_perf.iterrows():
@@ -291,6 +347,14 @@ if perf_file and car_fuel_file:
             else:
                 row_data['رقم الإقامة'] = p_id if p_id else "1000000000"
 
+            if matched_agent is not None and pd.notna(matched_agent.get('master_job_id')) and str(matched_agent.get('master_job_id')).strip() != '':
+                row_data['الرقم الوظيفي'] = str(matched_agent.get('master_job_id')).replace('.0', '').strip()
+            else:
+                row_data['الرقم الوظيفي'] = "-"
+
+            # حساب أول يوم إنتاج
+            row_data['أول يوم إنتاج'] = get_first_production_day(p_row, df_perf.columns)
+
             row_data['agent_full_text'] = f"{row_data['اسم المندوب']} {p_name} {p_user} {p_id}"
             processed_rows.append(row_data)
 
@@ -316,6 +380,9 @@ if perf_file and car_fuel_file:
         df_merged['الطلبات المحققة'] = pd.to_numeric(df_merged.get('الطلبات المحققة', 0), errors='coerce').fillna(0)
         df_merged['إيراد الشركة من العميل'] = df_merged['الطلبات المحققة'].apply(calc_supermall_revenue) if selected_client == "Supermall" else (df_merged['الطلبات المحققة'].apply(calc_ninja_revenue) if selected_client == "Ninja" else df_merged['الطلبات المحققة'] * 6)
 
+        df_merged['الهدف المطلوب'] = df_merged.apply(lambda r: 460 if selected_client == "Ninja" else 550, axis=1)
+        df_merged['المتبقي من الهدف'] = df_merged.apply(lambda r: max(0, r['الهدف المطلوب'] - r['الطلبات المحققة']), axis=1)
+
         def calc_dues(row):
             row_str = str(row.get('agent_full_text', ''))
             is_free = True if selected_client == "Ninja" else ('فري' in row_str or 'حر' in row_str)
@@ -326,10 +393,11 @@ if perf_file and car_fuel_file:
         df_merged[['نوع المندوب', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب']] = df_merged.apply(calc_dues, axis=1)
         df_merged['ربح الشركة الصافي'] = df_merged['إيراد الشركة من العميل'] - df_merged['إجمالي المستحق للمندوب'] - df_merged['مخصص البنزين']
 
-        display_cols = ['رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'الطلبات المحققة', 'مخصص البنزين', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي']
+        display_cols = ['الرقم الوظيفي', 'رقم الإقامة', 'اسم المندوب', 'نوع المندوب', 'أول يوم إنتاج', 'الهدف المطلوب', 'الطلبات المحققة', 'المتبقي من الهدف', 'مخصص البنزين', 'راتب الإنتاجية', 'بدل السيارة', 'إجمالي المستحق للمندوب', 'إيراد الشركة من العميل', 'ربح الشركة الصافي']
         final_df = df_merged[[c for c in display_cols if c in df_merged.columns]]
         
-        # --- إضافة صف المجاميع أسفل الجدول ---
+        final_df.insert(0, 'م', range(1, len(final_df) + 1))
+        
         total_row = {col: '-' for col in final_df.columns}
         total_row['اسم المندوب'] = 'الإجمالي الكلي (المجموع)'
         
