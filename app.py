@@ -77,7 +77,6 @@ def extract_report_days(df):
 def get_first_production_day(row, columns):
     active_dates = []
     
-    # 1. البحث لو كان التقرير عمودياً (يحتوي على عمود تاريخ صريح)
     for col in columns:
         if str(col).strip().lower() in ['date', 'التاريخ', 'day', 'اليوم']:
             val = row.get(col)
@@ -87,18 +86,15 @@ def get_first_production_day(row, columns):
                 except:
                     return str(val)
                     
-    # 2. البحث لو كان التقرير أفقياً (أعمدة التواريخ مثل: 29 Aug Delivered)
     for col in columns:
         c_str = str(col)
         if 'total' in c_str.lower() or 'grand' in c_str.lower() or 'avg' in c_str.lower(): continue
         
         parsed_date = pd.NaT
-        # صائد التواريخ بصيغة 29 Aug
         m1 = re.search(r'\b(\d{1,2}[\s\-]+[A-Za-z]{3})\b', c_str)
         if m1: 
             parsed_date = pd.to_datetime(m1.group(1) + " 2026", errors='coerce')
         else:
-            # صائد التواريخ الرقمية (YYYY-MM-DD أو DD/MM/YYYY)
             m2 = re.search(r'\b(\d{4}-\d{1,2}-\d{1,2})\b', c_str)
             if m2: parsed_date = pd.to_datetime(m2.group(1), errors='coerce')
             else:
@@ -108,14 +104,12 @@ def get_first_production_day(row, columns):
         if pd.notna(parsed_date):
             val = row.get(col)
             try:
-                # إذا حقق أكثر من 0 في هذا اليوم، يتم تسجيله كيوم إنتاج
                 if float(val) > 0:
                     active_dates.append(parsed_date)
             except:
                 pass
                 
     if active_dates:
-        # إرجاع أقدم تاريخ (أول يوم إنتاج)
         return min(active_dates).strftime('%d %b')
     return "-"
 
@@ -179,7 +173,7 @@ def get_smart_car_allowance(row_str, report_days):
     full_allowance = 1200 if 'بدل سياره جديد' in row_str or 'بدل سيارة جديد' in row_str else (1000 if 'بدل سياره' in row_str or 'بدل سيارة' in row_str else 0)
     return full_allowance if full_allowance > 0 and report_days >= 28 else round((full_allowance / 30) * report_days, 2) if full_allowance > 0 else 0
 
-# --- 5. إنشاء الداشبورد التفاعلي بدقة (يمين لليسار RTL) ---
+# --- 5. إنشاء الداشبورد التفاعلي (RTL) ---
 def create_modern_excel(df, client_name):
     output = BytesIO()
     workbook = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -352,9 +346,7 @@ if perf_file and car_fuel_file:
             else:
                 row_data['الرقم الوظيفي'] = "-"
 
-            # حساب أول يوم إنتاج
             row_data['أول يوم إنتاج'] = get_first_production_day(p_row, df_perf.columns)
-
             row_data['agent_full_text'] = f"{row_data['اسم المندوب']} {p_name} {p_user} {p_id}"
             processed_rows.append(row_data)
 
